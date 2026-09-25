@@ -1,0 +1,18 @@
+# Credenciales (nunca al repo)
+secrets.h
+
+# PlatformIO / Arduino
+.pio/
+build/
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# Editor / SO
+.vscode/
+.DS_Store
+Thumbs.db

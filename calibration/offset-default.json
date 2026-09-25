@@ -1,0 +1,93 @@
+{
+    "legs": [
+        {
+            "servos": [
+                {
+                    "offset": 90.4390243902439,
+                    "invert": false,
+                    "min": 0.0,
+                    "max": 180.0
+                },
+                {
+                    "offset": 134.34146341463412,
+                    "invert": false,
+                    "min": 0.0,
+                    "max": 175.0
+                },
+                {
+                    "offset": 104.48780487804879,
+                    "invert": false,
+                    "min": 0.0,
+                    "max": 175.0
+                }
+            ]
+        },
+        {
+            "servos": [
+                {
+                    "offset": 88.6829268292683,
+                    "invert": false,
+                    "min": 0.0,
+                    "max": 180.0
+                },
+                {
+                    "offset": 127.3170731707317,
+                    "invert": false,
+                    "min": 0.0,
+                    "max": 175.0
+                },
+                {
+                    "offset": 104.48780487804879,
+                    "invert": false,
+                    "min": 0.0,
+                    "max": 175.0
+                }
+            ]
+        },
+        {
+            "servos": [
+                {
+                    "offset": 97.46341463414637,
+                    "invert": false,
+                    "min": 0.0,
+                    "max": 180.0
+                },
+                {
+                    "offset": 48.29268292682926,
+                    "invert": false,
+                    "min": 0.0,
+                    "max": 175.0
+                },
+                {
+                    "offset": 118.53658536585363,
+                    "invert": true,
+                    "min": 0.0,
+                    "max": 175.0
+                }
+            ]
+        },
+        {
+            "servos": [
+                {
+                    "offset": 95.70731707317071,
+                    "invert": false,
+                    "min": 0.0,
+                    "max": 180.0
+                },
+                {
+                    "offset": 41.26829268292681,
+                    "invert": false,
+                    "min": 0.0,
+                    "max": 175.0
+                },
+                {
+                    "offset": 104.48780487804879,
+                    "invert": true,
+                    "min": 0.0,
+                    "max": 175.0
+                }
+            ]
+        }
+    ],
+    "limits_configured": true
+}

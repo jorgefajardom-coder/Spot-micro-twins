@@ -1,0 +1,4 @@
+numpy>=1.24
+matplotlib>=3.7
+websocket-client>=1.6
+pillow>=10.0

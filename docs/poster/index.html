@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SpotMini-CO - Poster Técnico</title>
+  <style>
+    /* Fondo general */
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: linear-gradient(135deg, #091521 0%, #0b1e33 100%);
+      color: #ffffff;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+    }
+
+    /* Contenedor del póster - VERTICAL 900x1700 */
+    .poster {
+      width: 1200px;
+      height: 1950px;
+      margin: 0 auto;
+      padding: 50px;
+      box-sizing: border-box;
+      background: #0b1e33;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      display: flex;
+      flex-direction: column;
+      gap: 30px;
+      border-radius: 10px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Elementos decorativos */
+    .corner-decoration {
+      position: absolute;
+      width: 200px;
+      height: 200px;
+      border: 2px solid #00e5ff;
+      opacity: 0.1;
+    }
+
+    .corner-top-left {
+      top: -100px;
+      left: -100px;
+      border-right: none;
+      border-bottom: none;
+    }
+
+    .corner-bottom-right {
+      bottom: -100px;
+      right: -100px;
+      border-left: none;
+      border-top: none;
+    }
+
+    /* Encabezado */
+    .header {
+      text-align: center;
+      margin-bottom: 10px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* TÍTULO MEJORADO - MÁS LLAMATIVO */
+    .title {
+      font-size: 62px;
+      font-weight: 900;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      background: linear-gradient(135deg, #ffffff 0%, #00e5ff 30%, #0099cc 70%, #0066cc 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 10px;
+      text-shadow: 
+        0 0 20px rgba(0, 229, 255, 0.5),
+        0 0 40px rgba(0, 153, 204, 0.3),
+        0 0 60px rgba(0, 102, 204, 0.2);
+      position: relative;
+      display: inline-block;
+      padding: 0 20px;
+      animation: titleGlow 3s ease-in-out infinite alternate;
+    }
+
+    /* Efecto de brillo animado */
+    @keyframes titleGlow {
+      0% {
+        text-shadow: 
+          0 0 20px rgba(0, 229, 255, 0.5),
+          0 0 40px rgba(0, 153, 204, 0.3),
+          0 0 60px rgba(0, 102, 204, 0.2);
+      }
+      100% {
+        text-shadow: 
+          0 0 25px rgba(0, 229, 255, 0.7),
+          0 0 50px rgba(0, 153, 204, 0.5),
+          0 0 75px rgba(0, 102, 204, 0.3),
+          0 0 100px rgba(0, 102, 204, 0.1);
+      }
+    }
+
+    /* Línea decorativa debajo del título */
+    .title::after {
+      content: '';
+      position: absolute;
+      bottom: -15px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 80%;
+      height: 4px;
+      background: linear-gradient(90deg, 
+        transparent 0%, 
+        #00e5ff 20%, 
+        #0099cc 50%, 
+        #00e5ff 80%, 
+        transparent 100%);
+      border-radius: 2px;
+      box-shadow: 0 0 15px rgba(0, 229, 255, 0.5);
+    }
+
+    .subtitle {
+      font-size: 24px;
+      color: #c5d3e6;
+      margin-top: 35px;
+      font-weight: 500;
+      letter-spacing: 1.5px;
+      background: linear-gradient(90deg, #00e5ff, #0099cc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      padding: 10px 20px;
+      border-left: 3px solid #00e5ff;
+      border-right: 3px solid #0099cc;
+      border-radius: 5px;
+      background-color: rgba(0, 229, 255, 0.05);
+    }
+
+    /* Imagen principal */
+    .image-container {
+      background: linear-gradient(145deg, #050b11, #0a1524);
+      border-radius: 10px;
+      padding: 15px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border: 1px solid #1e3550;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+      position: relative;
+      overflow: hidden;
+      height: 350px;
+      transition: all 0.4s ease;
+    }
+
+    .image-container:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 25px rgba(0, 229, 255, 0.2);
+      border-color: #00e5ff;
+    }
+
+    .image-container::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(to right, #00e5ff, #091521);
+      transition: height 0.3s ease;
+    }
+
+    .image-container:hover::before {
+      height: 5px;
+      background: linear-gradient(to right, #00e5ff, #00a8cc);
+    }
+
+    /* Estilos para la imagen real */
+    .robot-image {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: 6px;
+      transition: transform 0.5s ease;
+    }
+
+    .image-container:hover .robot-image {
+      transform: scale(1.05);
+    }
+
+    .image-caption {
+      font-size: 14px;
+      text-align: center;
+      margin-top: 8px;
+      color: #c5d3e6;
+      font-style: italic;
+    }
+
+    /* Cuerpo: 3 columnas - COLUMNA 3 MÁS ANCHA */
+    .content {
+      display: grid;
+      grid-template-columns: 1.2fr 1.2fr 2.4fr;
+      gap: 25px;
+      margin-top: 15px;
+      flex: 1;
+      min-height: 850px;
+    }
+
+    .col {
+      font-size: 16px;
+      line-height: 1.5;
+      background: rgba(5, 11, 17, 0.5);
+      padding: 20px;
+      border-radius: 8px;
+      border: 1px solid #1e3550;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+      display: flex;
+      flex-direction: column;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .col::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(0, 229, 255, 0.1), transparent);
+      transition: left 0.6s ease;
+    }
+
+    .col:hover::before {
+      left: 100%;
+    }
+
+    .col:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 15px rgba(0, 0, 0, 0.4);
+      border-color: #00e5ff;
+    }
+
+    h2 {
+      font-size: 20px;
+      margin: 12px 0 10px;
+      color: #00e5ff;
+      border-bottom: 1px solid #1e3550;
+      padding-bottom: 6px;
+      display: flex;
+      align-items: center;
+      transition: color 0.3s ease;
+    }
+
+    .col:hover h2 {
+      color: #00fffb;
+    }
+
+    h2::before {
+      content: "▶";
+      margin-right: 8px;
+      font-size: 12px;
+      color: #00e5ff;
+      transition: transform 0.3s ease;
+    }
+
+    .col:hover h2::before {
+      transform: rotate(90deg);
+      color: #00fffb;
+    }
+
+    ul {
+      padding-left: 22px;
+      margin-top: 0;
+      flex: 1;
+    }
+
+    li {
+      margin-bottom: 10px;
+      position: relative;
+      transition: transform 0.2s ease;
+      padding-left: 5px;
+    }
+
+    .col:hover li {
+      transform: translateX(5px);
+    }
+
+    li::marker {
+      color: #00e5ff;
+      transition: color 0.3s ease;
+    }
+
+    .col:hover li::marker {
+      color: #00fffb;
+    }
+
+    strong {
+      color: #00e5ff;
+      transition: color 0.3s ease;
+    }
+
+    .col:hover strong {
+      color: #00fffb;
+    }
+
+    .specs-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      font-size: 12px;
+      flex: 1;
+      transition: all 0.3s ease;
+      table-layout: fixed;
+    }
+    
+    .specs-table th, .specs-table td {
+      border: 1px solid #1e3550;
+      padding: 8px;
+      text-align: center;
+      transition: all 0.3s ease;
+      word-wrap: break-word;
+    }
+    
+    .specs-table th {
+      background: rgba(0, 229, 255, 0.1);
+      color: #00e5ff;
+      font-weight: 600;
+    }
+    
+    .specs-table tr:nth-child(even) {
+      background: rgba(255, 255, 255, 0.05);
+    }
+    
+    .col:hover .specs-table {
+      box-shadow: 0 0 10px rgba(0, 229, 255, 0.2);
+    }
+    
+    .col:hover .specs-table th {
+      background: rgba(0, 229, 255, 0.2);
+    }
+    
+    .col:hover .specs-table td {
+      border-color: rgba(0, 229, 255, 0.3);
+    }
+
+    /* Ajustes específicos para columnas de la tabla */
+    .specs-table th:nth-child(1),
+    .specs-table td:nth-child(1) {
+      width: 20%;
+    }
+    
+    .specs-table th:nth-child(2),
+    .specs-table td:nth-child(2),
+    .specs-table th:nth-child(3),
+    .specs-table td:nth-child(3),
+    .specs-table th:nth-child(4),
+    .specs-table td:nth-child(4) {
+      width: 12%;
+    }
+    
+    .specs-table th:nth-child(5),
+    .specs-table td:nth-child(5) {
+      width: 22%;
+    }
+    
+    .specs-table th:nth-child(6),
+    .specs-table td:nth-child(6) {
+      width: 22%;
+    }
+
+    /* Pie de página */
+    .footer {
+      border-top: 1px solid #1e3550;
+      padding-top: 20px;
+      font-size: 14px;
+      display: flex;
+      justify-content: space-between;
+      color: #c5d3e6;
+      margin-top: 20px;
+      transition: all 0.3s ease;
+    }
+
+    .footer:hover {
+      border-top-color: #00e5ff;
+    }
+
+    .qr-box {
+      width: 110px;
+      height: 110px;
+      border: 2px solid #00e5ff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      text-align: center;
+      border-radius: 5px;
+      background: rgba(0, 229, 255, 0.05);
+      flex-direction: column;
+      padding: 5px;
+      box-sizing: border-box;
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+
+    .qr-box:hover {
+      transform: scale(1.05);
+      border-color: #00fffb;
+      box-shadow: 0 0 15px rgba(0, 229, 255, 0.3);
+      background: rgba(0, 229, 255, 0.1);
+    }
+
+    .qr-code {
+      width: 70px;
+      height: 70px;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #000;
+      font-weight: bold;
+      margin-bottom: 5px;
+      transition: all 0.3s ease;
+    }
+
+    .qr-box:hover .qr-code {
+      background: #00e5ff;
+      color: #091521;
+    }
+
+    /* Para que se imprima bien */
+    @media print {
+      body {
+        background: none;
+        padding: 0;
+      }
+      .poster {
+        box-shadow: none;
+        margin: 0;
+        padding: 40px;
+        width: 100%;
+        height: 100%;
+      }
+      
+      /* Desactivar efectos en impresión */
+      .col, .image-container, .qr-box {
+        transform: none !important;
+      }
+      
+      .title {
+        animation: none;
+      }
+    }
+
+    /* Animaciones para elementos interactivos */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .col, .image-container, .header {
+      animation: fadeIn 0.8s ease forwards;
+    }
+
+    .col:nth-child(1) { animation-delay: 0.1s; }
+    .col:nth-child(2) { animation-delay: 0.2s; }
+    .col:nth-child(3) { animation-delay: 0.3s; }
+
+    /* Estilo para la imagen QR */
+    .qr-image {
+     width: 70px;
+    height: 70px;
+    object-fit: cover;
+    border-radius: 5px;
+    margin-bottom: 5px;
+    border: 2px solid #ffffff;
+    }
+
+    .qr-box:hover .qr-image {
+    border-color: #00e5ff;
+    transform: scale(1.05);
+    transition: all 0.3s ease;
+    }
+  </style>
+</head>
+<body>
+  <div class="poster">
+    <!-- Elementos decorativos -->
+    <div class="corner-decoration corner-top-left"></div>
+    <div class="corner-decoration corner-bottom-right"></div>
+
+    <!-- ENCABEZADO -->
+    <div class="header">
+      <div class="title">SPOT MINI</div>
+      <div class="subtitle">“La lealtad de un perro, la precisión de un robot.”</div>
+    </div>
+
+    <!-- IMAGEN PRINCIPAL - CON TU IMAGEN spot.jpg -->
+    <div class="image-container">
+      <img src="spot.jpg" alt="Prototipo SpotMini" class="robot-image">
+    </div>
+    <div class="image-caption">
+      Prototipo físico del robot cuadrúpedo basado en el repositorio open-source SpotMicroAI (3D Printing).
+    </div>
+
+    <!-- CONTENIDO EN 3 COLUMNAS -->
+    <div class="content">
+
+      <!-- COLUMNA 1 -->
+      <div class="col">
+        <h2>Descripción</h2>
+        <ul>
+          <li>Robot zoomorfo que simula el comportamiento motriz de un animal cuadrúpedo mamífero.</li>
+          <li>Color amarillo para demostraciones didácticas.</li>
+          <li>Giroscopio MPU6050 para estabilidad en terreno irregular.</li>
+          <li>Impresión 3D duradera de alta calidad.</li>
+          <li>Tapones de goma en las bases para mejor tracción.</li>
+        </ul>
+
+        <h2>Especificaciones Técnicas</h2>
+        <ul>
+          <li><strong>Velocidad:</strong> 10m/h constantes.</li>
+          <li><strong>Fuerza:</strong> 40kg.</li>
+          <li><strong>Estructura:</strong> Impresión 3D.</li>
+          <li><strong>Capacidad:</strong> Subir escaleras y moverse en terrenos irregulares.</li>
+          <li><strong>Características:</strong> Alta velocidad y gran capacidad de adaptación.</li>
+          <li><strong>Superficies:</strong> Óptimo para superficies complejas e irregulares.</li>
+        </ul>
+      </div>
+
+      <!-- COLUMNA 2 -->
+      <div class="col">
+        <h2>Arquitectura Mecánica</h2>
+        <ul>
+          <li>4 patas articuladas, 3 grados de libertad por pata (12 DoF).</li>
+          <li>Partes estructurales impresas en <strong>PETG/PLA</strong>.</li>
+          <li><strong>Servomotores de 20 kg·cm</strong> para articulaciones principales.</li>
+          <li>Geometría inspirada en la morfología de cuadrúpedos reales.</li>
+          <li>Tapones de goma en bases para mejor adherencia.</li>
+        </ul>
+
+        <h2>Electrónica</h2>
+        <ul>
+          <li><strong>ESP32</strong> como controlador principal (procesamiento + WiFi/Bluetooth).</li>
+          <li><strong>PCA9685 de 16 canales</strong> para generación de PWM preciso a los servos.</li>
+          <li><strong>MPU6050</strong> giroscopio para estabilidad y equilibrio.</li>
+          <li>Placa de expansión para ordenamiento de señales.</li>
+          <li>Fuente conmutada de 12V para alimentación principal.</li>
+        </ul>
+      </div>
+
+      <!-- COLUMNA 3 - MÁS ANCHA PARA LA TABLA -->
+      <div class="col">
+        <h2>Especificaciones Eléctricas</h2>
+        <table class="specs-table">
+          <tr>
+            <th>Componente</th>
+            <th>V min</th>
+            <th>V max</th>
+            <th>V nominal</th>
+            <th>Corriente</th>
+            <th>Potencia</th>
+          </tr>
+          <tr>
+            <td>Servo 20kg</td>
+            <td>4.8V</td>
+            <td>7.4V</td>
+            <td>6.4V</td>
+            <td>1-2A (pico 3A)</td>
+            <td>12-18W</td>
+          </tr>
+          <tr>
+            <td>PCA9685</td>
+            <td>2.3V</td>
+            <td>5.5V</td>
+            <td>5V</td>
+            <td>10-30mA</td>
+            <td>&lt;0.2W</td>
+          </tr>
+          <tr>
+            <td>Placa expansión</td>
+            <td>4.8V</td>
+            <td>5.5V</td>
+            <td>5V</td>
+            <td>0.5A max</td>
+            <td>2.5W</td>
+          </tr>
+          <tr>
+            <td>ESP32</td>
+            <td>3.0V</td>
+            <td>3.6V</td>
+            <td>3.3V</td>
+            <td>80-240mA</td>
+            <td>0.8W</td>
+          </tr>
+          <tr>
+            <td>MPU6050</td>
+            <td>2.3V</td>
+            <td>3.4V</td>
+            <td>3.3V</td>
+            <td>3-5mA</td>
+            <td>0.015W</td>
+          </tr>
+          <tr>
+            <td>Fuente</td>
+            <td>12V</td>
+            <td>12V</td>
+            <td>12V</td>
+            <td>30A</td>
+            <td>360W</td>
+          </tr>
+        </table>
+
+        <h2>Aplicaciones</h2>
+        <ul>
+          <li>Demostraciones didácticas y educativas.</li>
+          <li>Entretenimiento y robótica hobby.</li>
+          <li>Investigación en locomoción cuadrúpeda.</li>
+          <li>Pruebas de algoritmos de estabilidad.</li>
+          <li>Desarrollo de sistemas de control robótico.</li>
+        </ul>
+
+        <!-- SECCIÓN DE RESULTADOS OBTENIDOS COMO CATEGORÍA FORMAL -->
+        <h2>Resultados Obtenidos</h2>
+        <ul>
+          <li>Locomoción estable en superficies planas a velocidad constante de 10m/h.</li>
+          <li>Capacidad de carga de hasta 2kg manteniendo estabilidad.</li>
+          <li>Respuesta rápida de los servomotores con ángulos precisos.</li>
+          <li>Comunicación inalámbrica estable hasta 15 metros de distancia.</li>
+          <li>Capacidad de sortear obstáculos de hasta 5cm de altura.</li>
+          <li>Estabilidad en terrenos irregulares gracias al sistema MPU6050.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- PIE DE PÁGINA -->
+    <div class="footer">
+    <div style="flex: 1;">
+        <strong>Autores:</strong> Profundización II diurno.<br>
+        <strong>Organización:</strong> Universitaria Agustiniana.<br>
+        <strong>Docente encargado:</strong> Raúl Alejandro Barbosa Rodriguez.<br>
+        <strong>Repositorio base:</strong> SpotMicroAI / 3D Printing.<br>
+        <strong>Componentes principales:</strong> ESP32, PCA9685, MPU6050, Servos 20kg, Estructura 3D.
+    </div>
+    <div class="qr-box">
+        <img src="qr.png" class="qr-image" alt="Código QR del proyecto">
+        <div>Escanea para ver el proyecto.</div>
+    </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Script para mejorar la interactividad
+    document.addEventListener('DOMContentLoaded', function() {
+      // Efecto de click en las columnas
+      const columns = document.querySelectorAll('.col');
+      columns.forEach(col => {
+        col.addEventListener('click', function() {
+          this.style.transform = 'translateY(-5px) scale(1.02)';
+          setTimeout(() => {
+            this.style.transform = 'translateY(-5px)';
+          }, 150);
+        });
+      });
+      
+      // Verificar si la imagen se cargó correctamente
+      const image = document.querySelector('.robot-image');
+      image.onerror = function() {
+        console.error("Error: No se pudo cargar la imagen 'spot.jpg'");
+        alert("Error: No se pudo cargar la imagen 'spot.jpg'. Asegúrate de que esté en la misma carpeta que este archivo HTML.");
+      };
+      
+      image.onload = function() {
+        console.log("Imagen 'spot.jpg' cargada correctamente");
+      };
+    });
+  </script>
+</body>
+</html>
