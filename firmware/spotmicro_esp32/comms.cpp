@@ -28,8 +28,7 @@ void sendRaw(const char* data, size_t len) {
 void sendJson(const JsonDocument& doc) {
   char buf[512];
   if (measureJson(doc) >= sizeof(buf)) {
-    LOGI("JSON demasiado grande, no se envía
-");
+    LOGI("JSON demasiado grande, no se envía\n");
     return;
   }
   sendRaw(buf, serializeJson(doc, buf, sizeof(buf)));

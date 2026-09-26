@@ -3,6 +3,7 @@ secrets.h
 
 # PlatformIO / Arduino
 .pio/
+.pio-core/
 build/
 
 # Python
