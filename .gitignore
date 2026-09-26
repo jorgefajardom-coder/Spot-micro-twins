@@ -16,3 +16,8 @@ venv/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Modelos CAD pesados (se convierten con desktop/models/build_model.py)
+*.stl
+*.step
+*.stp
