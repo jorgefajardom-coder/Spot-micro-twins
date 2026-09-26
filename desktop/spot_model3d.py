@@ -1,31 +1,29 @@
 """Modelo 3D del SpotMicro pegado al esqueleto de la cinemática.
 
 - El esqueleto sale de `Kinematics.leg_IK` (hombro j1, cadera j2, rodilla j3, pie j4).
-- Cada hueso tiene un marco local; cada pieza (STL o provisional) se pega a su marco.
-- Las piezas se configuran en models/spot_parts.json. Si falta un STL se usa una
-  pieza provisional con las medidas del robot, así la vista funciona siempre.
+- Cada hueso tiene un marco local; cada pieza se pega a su marco.
+- El modelo real sale de models/spot_model.npz (generado con models/build_model.py a
+  partir del STL de Fusion). Si no existe se usan piezas provisionales con las medidas
+  del robot, así la vista funciona siempre.
 
 Marcos locales (todos dextrógiros, y = hacia la izquierda del robot):
   body      origen en el centro del cuerpo, x adelante, z arriba
   shoulder  origen en j1 (eje del hombro), y hacia afuera en patas izquierdas
   upper     origen en j2 (cadera), la pieza cuelga hacia -z hasta la rodilla
-  lower     origen en j3 (rodilla), la pieza cuelga hacia -z hasta el pie
-  foot      origen en j4, misma orientación que lower
+  lower     origen en j3 (rodilla), la pieza cuelga hacia -z hasta el pie (incluye el pie)
 """
 
-import json
 import os
-import struct
 from math import cos, radians, sin
 
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_PARTS_FILE = os.path.join(HERE, "models", "spot_parts.json")
+DEFAULT_MODEL_FILE = os.path.join(HERE, "models", "spot_model.npz")
 
 LEG_NAMES = ["LF", "LB", "RB", "RF"]  # mismo orden que Kinematics
 RIGHT_LEGS = (2, 3)
-BONES = ["shoulder", "upper", "lower", "foot"]
+BONES = ["shoulder", "upper", "lower"]
 
 YELLOW = (0.96, 0.71, 0.0)
 BLACK = (0.16, 0.16, 0.17)
@@ -112,50 +110,6 @@ def solve_skeleton(kin, foot_targets, rot, body_pos, is_radians=False):
 # Mallas
 # =============================================================================
 
-def load_stl(path):
-    """Carga STL binario o ASCII -> (V, F) con vértices únicos."""
-    with open(path, "rb") as f:
-        data = f.read()
-    tris = None
-    if len(data) >= 84:
-        n = struct.unpack_from("<I", data, 80)[0]
-        if 84 + n * 50 == len(data):
-            rec = np.frombuffer(data, dtype=np.dtype([
-                ("n", "<f4", 3), ("v", "<f4", (3, 3)), ("a", "<u2")]), count=n, offset=84)
-            tris = rec["v"].astype(float)
-    if tris is None:  # ASCII
-        vals = [line.split()[1:4] for line in data.decode("utf-8", "ignore").splitlines()
-                if line.strip().startswith("vertex")]
-        tris = np.array(vals, dtype=float).reshape(-1, 3, 3)
-    verts, inv = np.unique(tris.reshape(-1, 3), axis=0, return_inverse=True)
-    return verts, inv.reshape(-1, 3)
-
-
-def simplify(verts, faces, max_faces):
-    """Reduce caras por agrupamiento de vértices en una rejilla (vertex clustering)."""
-    if len(faces) <= max_faces:
-        return verts, faces
-    size = np.ptp(verts, axis=0).max()
-    lo, hi = size / 400, size / 4
-    best = (verts, faces)
-    for _ in range(18):  # búsqueda binaria del tamaño de celda
-        cell = (lo + hi) / 2
-        keys = np.floor((verts - verts.min(0)) / cell).astype(np.int64)
-        _, cluster, counts = np.unique(keys, axis=0, return_inverse=True, return_counts=True)
-        cluster = cluster.ravel()
-        new_v = np.zeros((counts.size, 3))
-        np.add.at(new_v, cluster, verts)
-        new_v /= counts[:, None]
-        f = cluster[faces]
-        f = f[(f[:, 0] != f[:, 1]) & (f[:, 1] != f[:, 2]) & (f[:, 0] != f[:, 2])]
-        f = np.unique(np.sort(f, axis=1), axis=0) if len(f) else f
-        if len(f) > max_faces:
-            lo = cell
-        else:
-            hi, best = cell, (new_v, f)
-    return best
-
-
 def box(x0, x1, y0, y1, z0, z1, taper=1.0):
     """Caja (opcionalmente estrechada en z0) como (V, F)."""
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
@@ -179,7 +133,7 @@ def merge(*meshes):
 
 
 def placeholder_parts(kin):
-    """Piezas provisionales con las medidas reales (lado izquierdo)."""
+    """Piezas provisionales con las medidas reales (lado izquierdo): {hueso: [((V,F), color)]}."""
     l1, l2, l3 = kin.link_1, kin.link_2, kin.link_3
     body_len, body_w = kin.length + 0.075, kin.width + 0.035
     return {
@@ -192,8 +146,8 @@ def placeholder_parts(kin):
         ],
         "shoulder": [(box(-0.026, 0.026, -0.006, l1 - 0.012, -0.024, 0.024), BLACK)],
         "upper": [(box(-0.021, 0.021, -0.010, 0.020, -l2 - 0.006, 0.016), YELLOW)],
-        "lower": [(box(-0.013, 0.013, -0.009, 0.013, -l3 + 0.010, 0.010, taper=0.55), BLACK)],
-        "foot": [(box(-0.014, 0.014, -0.011, 0.015, -0.012, 0.012), YELLOW)],
+        "lower": [(merge(box(-0.013, 0.013, -0.009, 0.013, -l3 + 0.010, 0.010, taper=0.55),
+                         box(-0.014, 0.014, -0.011, 0.015, -l3 - 0.012, -l3 + 0.012)), BLACK)],
     }
 
 
@@ -202,47 +156,51 @@ def _mirror_y(v, f):
 
 
 class SpotModel:
-    """Conjunto de piezas por hueso, en coordenadas locales (metros)."""
+    """Piezas en coordenadas locales de cada hueso (metros), con color por cara.
 
-    def __init__(self, kin, parts_file=DEFAULT_PARTS_FILE, max_faces_per_part=500):
+    body:  [(V, F, C)]           legs[pata][hueso]: [(V, F, C)]   C = (n_caras, 3) en 0..1
+    """
+
+    def __init__(self, kin, model_file=DEFAULT_MODEL_FILE):
         self.kin = kin
-        self.max_faces = max_faces_per_part
-        self.parts = placeholder_parts(kin)  # {bone: [(V, F, color)]} lado izquierdo
-        self.right = {}                      # piezas específicas del lado derecho
-        self.using_stl = []
-        self._load_config(parts_file)
+        self.source = "provisional"
+        if model_file and os.path.exists(model_file):
+            self._load_npz(model_file)
+            self.source = os.path.basename(model_file)
+        else:
+            self._load_placeholder()
 
-    def _load_config(self, parts_file):
-        if not os.path.exists(parts_file):
-            return
-        with open(parts_file, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-        base = os.path.dirname(parts_file)
-        for key, entries in cfg.get("parts", {}).items():
-            meshes = []
-            for e in entries:
-                path = os.path.join(base, e["file"])
-                if not os.path.exists(path):
-                    meshes = None
-                    break
-                v, f = load_stl(path)
-                v, f = simplify(v, f, e.get("max_faces", self.max_faces))
-                v = (v - np.asarray(e.get("origin", [0, 0, 0]))) * e.get("scale", 0.001)
-                v = v @ rot_zyx(*[radians(a) for a in e.get("rotation_deg", [0, 0, 0])]).T
-                v = v + np.asarray(e.get("offset", [0, 0, 0]))
-                meshes.append((v, f, tuple(e.get("color", YELLOW))))
-            if meshes:  # solo se reemplaza la pieza si están todos sus archivos
-                bone, _, side = key.partition("_")
-                (self.right if side == "right" else self.parts)[bone] = meshes
-                self.using_stl.append(key)
+    def _load_placeholder(self):
+        parts = placeholder_parts(self.kin)
 
-    def meshes_for(self, bone, right_side):
-        if right_side and bone in self.right:
-            return self.right[bone]
-        meshes = self.parts[bone]
-        if right_side:
-            return [(*_mirror_y(m[0], m[1]), m[2]) for m in (_to3(p) for p in meshes)]
-        return [_to3(p) for p in meshes]
+        def colored(entries, mirror=False):
+            out = []
+            for (v, f), c in entries:
+                if mirror:
+                    v, f = _mirror_y(v, f)
+                out.append((v, f, np.tile(c, (len(f), 1))))
+            return out
+
+        self.body = colored(parts["body"])
+        self.legs = [{bone: colored(parts[bone], mirror=leg in RIGHT_LEGS) for bone in BONES}
+                     for leg in range(4)]
+
+    def _load_npz(self, path):
+        data = np.load(path)
+
+        def part(key):
+            if f"{key}_v" not in data:
+                return []
+            return [(data[f"{key}_v"].astype(float), data[f"{key}_f"],
+                     data[f"{key}_c"].astype(float) / 255.0)]
+
+        self.body = part("body")
+        self.legs = [{bone: part(f"{leg}_{bone}") for bone in BONES} for leg in range(4)]
+
+    @property
+    def face_count(self):
+        n = sum(len(f) for _, f, _ in self.body)
+        return n + sum(len(f) for leg in self.legs for parts in leg.values() for _, f, _ in parts)
 
     def world_triangles(self, skel, offset=(0, 0, 0), include_body=True):
         """Triángulos en mundo (N,3,3) y color base (N,3) para un esqueleto."""
@@ -253,26 +211,18 @@ class SpotModel:
             for v, f, c in meshes:
                 w = v @ r.T + p + off
                 tris.append(w[f])
-                cols.append(np.tile(c, (len(f), 1)))
+                cols.append(c)
 
         if include_body:
-            add(self.meshes_for("body", False), *skel["body"])
+            add(self.body, *skel["body"])
         for leg, bones in enumerate(skel["legs"]):
             if bones is None:
                 continue
             for bone in BONES:
-                add(self.meshes_for(bone, leg in RIGHT_LEGS), *bones[bone])
+                add(self.legs[leg][bone], *bones[bone])
         if not tris:
             return np.zeros((0, 3, 3)), np.zeros((0, 3))
         return np.concatenate(tris), np.concatenate(cols)
-
-
-def _to3(p):
-    """Normaliza (mesh, color) o (V, F, color) a (V, F, color)."""
-    if len(p) == 2:
-        (v, f), c = p
-        return v, f, c
-    return p
 
 
 # =============================================================================
