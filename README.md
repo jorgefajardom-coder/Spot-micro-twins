@@ -2,7 +2,7 @@
   <img src="docs/assets/twins-logo.jpg" alt="Twins Spot Micro" width="360">
 </p>
 
-<h1 align="center">SPOT MINI — SpotMicro V3</h1>
+<h1 align="center">Spot Micro Twins</h1>
 
 <p align="center"><em>“La lealtad de un perro, la precisión de un robot.”</em></p>
 
