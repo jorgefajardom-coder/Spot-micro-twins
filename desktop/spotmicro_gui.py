@@ -68,6 +68,10 @@ def disconnect_ws():
 
 def send_angles(angle_list):
     global ws, ws_connected
+    if angle_list is None:
+        return False
+    if len(angle_list) != 12 or any(not math.isfinite(a) or not 0 <= a <= 180 for a in angle_list):
+        return False
     if not send_to_esp32_flag.get():
         return
     
@@ -100,6 +104,7 @@ def send_command(command):
             return False
 
     try:
+        mpu_handler.start_mpu_listener(request_data=False)
         ws.send(command)
         print(f"📤 Comando enviado: {command}")
         return True
@@ -153,20 +158,22 @@ class MPU6050Handler:
         self.orientation = {"roll": 0.0, "pitch": 0.0, "yaw": 0.0} 
         self.temperature = 0.0
         self.data_queue = queue.Queue()
+        self.response_queue = queue.Queue()
         self.is_running = False
         self.thread = None
         self.data_sending_enabled = False  # ✅ NUEVO: Controlar envío de datos
 
-    def start_mpu_listener(self):
+    def start_mpu_listener(self, request_data=True):
         """Iniciar hilo para recibir datos del MPU-6050 usando conexión compartida"""
         if self.is_running:
+            self.data_sending_enabled = self.data_sending_enabled or request_data
             return
             
         self.is_running = True
-        self.data_sending_enabled = True  # ✅ Habilitar envío de datos
+        self.data_sending_enabled = request_data
         self.thread = threading.Thread(target=self._mpu_listener_thread, daemon=True)
         self.thread.start()
-        print("✅ Listener MPU-6050 iniciado - Envío de datos ACTIVADO")
+        print("✅ Receptor MPU-6050 iniciado")
         
     def stop_mpu_listener(self):
         """Detener hilo del MPU-6050"""
@@ -211,6 +218,8 @@ class MPU6050Handler:
                 print(f"⚠️ Error en listener MPU: {e}")
                 time.sleep(0.5)
 
+        self.is_running = False
+
     def request_mpu_data(self):
         """Solicitar datos del MPU-6050 al ESP32 usando conexión compartida"""
         global ws, ws_connected
@@ -236,6 +245,9 @@ class MPU6050Handler:
         """Procesar datos JSON del MPU-6050 incluyendo YAW"""
         try:
             data = json.loads(data_str)
+            if 'status' in data or 'accel_offsets' in data or 'gyro_offsets' in data:
+                self.response_queue.put(data)
+                return
             
             # Si son datos del sensor MPU-6050
             if 'sensor' in data and data['sensor'] == 'mpu6050':
@@ -1467,6 +1479,8 @@ class RobotGUI:
     def update_mpu_display(self):
         """Actualizar display con los últimos datos del MPU-6050 y calcular PID"""
         try:
+            while not mpu_handler.response_queue.empty():
+                self._process_mpu_data(json.dumps(mpu_handler.response_queue.get_nowait()))
             # Obtener datos más recientes
             data = mpu_handler.get_latest_data()
             if data:
@@ -1527,10 +1541,12 @@ class RobotGUI:
                 elif status == "IMU reset":
                     print("✅ Orientación del IMU reseteada")
                 elif status == "Offsets updated":
-                    print("✅ Offsets actualizados")
+                    messagebox.showinfo("Offsets", "Offsets aplicados correctamente")
+                elif status == "error":
+                    messagebox.showerror("ESP32", data.get('error', 'Error de comando'))
                     
             # Si son offsets
-            elif 'accel_offsets' in data and 'gyro_offsets' in data:
+            if 'accel_offsets' in data and 'gyro_offsets' in data:
                 accel_offsets = data['accel_offsets']
                 gyro_offsets = data['gyro_offsets']
                 
@@ -1580,7 +1596,8 @@ class RobotGUI:
             return
         
         try:
-            ws.send("cmd:reset_imu")
+            if not send_command("cmd:reset_imu"):
+                raise ConnectionError("No se pudo enviar el comando al ESP32")
             print("🔄 Orientación del IMU reseteada")
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo enviar comando: {e}")
@@ -1592,7 +1609,8 @@ class RobotGUI:
             return
         
         try:
-            ws.send("cmd:get_offsets")
+            if not send_command("cmd:get_offsets"):
+                raise ConnectionError("No se pudo enviar el comando al ESP32")
             print("📊 Solicitando offsets del IMU...")
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo enviar comando: {e}")
@@ -1614,10 +1632,11 @@ class RobotGUI:
             
             # Formatear comando
             cmd = f"cmd:set_offsets:{ax},{ay},{az},{gx},{gy},{gz}"
-            self.send_command(cmd)
+            if not send_command(cmd):
+                raise ConnectionError("No se pudo enviar el comando al ESP32")
             
             print(f"💾 Aplicando offsets: A({ax},{ay},{az}) G({gx},{gy},{gz})")
-            messagebox.showinfo("Offsets", "Offsets aplicados correctamente")
+            # La confirmación se procesa al recibir 'Offsets updated'.
             
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo enviar offsets: {e}")
@@ -4780,8 +4799,6 @@ class RobotGUI:
                 display_angles.extend([float('nan'), float('nan'), float('nan')])
             else:
                 degs = [degrees(normalize_angle(a)) for a in leg_angles]
-                # Asegurar que estén en [-180, 180]
-                degs = [(d + 180) % 360 - 180 for d in degs]
                 display_angles.extend(degs)
         
         return display_angles
@@ -4894,26 +4911,23 @@ class RobotGUI:
                 send_angles(calibrated_flat_angles)
     
     def get_calibrated_angles_for_esp32(self, angles_list):
-        """Obtener ángulos calibrados en grados para enviar al ESP32, FORZANDO 0-180°"""
-        calibrated_angles = self.apply_calibration(angles_list)
-        
-        # Convertir a grados y aplanar la lista
-        flat_angles = []
-        for leg_angles in calibrated_angles:
-            for angle in leg_angles:
-                # Convertir a grados y normalizar a [0, 360]
-                deg = degrees(normalize_angle(angle))
-                deg = deg % 360
-                
-                # FORZAR a rango [0, 180] para servos
-                if deg > 180:
-                    deg = 180  # Limitar a máximo 180
-                elif deg < 0:
-                    deg = 0    # Limitar a mínimo 0
-                    
-                flat_angles.append(deg)
-        
-        print(f"🔧 Ángulos enviados (forzados 0-180°): {flat_angles}")  # Debug
+        """Validar el paquete completo antes de enviar desde cualquier control.
+
+        Conserva las vueltas equivalentes de la IK, pero nunca transforma un
+        ángulo negativo en el extremo opuesto del servo. None bloquea el envío.
+        """
+        flat_angles = self.get_display_angles_deg(angles_list)
+        errors = []
+        if len(flat_angles) != 12 or any(not math.isfinite(a) for a in flat_angles):
+            errors.append("Se requieren 12 ángulos finitos")
+        elif any(a < 0 or a > 180 for a in flat_angles):
+            errors.append("Ángulos fuera del rango físico 0–180°")
+        else:
+            errors.extend(self.check_angle_limits(flat_angles))
+        if errors:
+            self.error_label.config(text="ERRORES:\n" + "\n".join(errors))
+            return None
+        self.error_label.config(text="")
         return flat_angles
 
     def display_angles(self, angles_list):
@@ -5370,16 +5384,6 @@ class RobotGUI:
             if not physical_errors:  # Solo enviar si no hay errores físicos
                 calibrated_flat_angles = self.get_calibrated_angles_for_esp32(angles_list)
                 send_angles(calibrated_flat_angles)
-        
-        # Si no hay límites cargados pero tampoco errores físicos
-        if not self.limits_loaded and not physical_errors:
-            self.error_label.config(text="Límites no configurados - Cargar calibración")
-            # Actualizar display sin verificación de límites
-            self.display_angles(angles_list)
-            
-            # Enviar ángulos calibrados al ESP32 si está activado
-            calibrated_flat_angles = self.get_calibrated_angles_for_esp32(angles_list)
-            send_angles(calibrated_flat_angles)
         
         # Actualizar estado de conexión WebSocket
         self.update_websocket_status()

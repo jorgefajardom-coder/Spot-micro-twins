@@ -232,11 +232,15 @@ class SpotModel:
 LIGHT = _unit(np.array([0.4, -0.5, 0.8]))
 
 
-def shade(tris, base_colors, ambient=0.38):
+def shade(tris, base_colors, ambient=0.62):
     n = np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0])
     n /= np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-12)
-    k = ambient + (1 - ambient) * np.abs(n @ LIGHT)  # iluminación a dos caras
-    return np.clip(base_colors * k[:, None], 0, 1)
+    # Luz principal y relleno para conservar detalle en las piezas oscuras.
+    # El STL simplificado tiene caras con orientación mixta: iluminar ambos lados.
+    key = np.abs(n @ LIGHT)
+    fill = np.abs(n @ _unit(np.array([-0.6, 0.4, 0.5])))
+    k = ambient + 0.30 * key + 0.10 * fill
+    return np.clip(base_colors * k[:, None] + 0.035 * key[:, None], 0, 1)
 
 
 class SpotScene:
@@ -246,15 +250,18 @@ class SpotScene:
         from mpl_toolkits.mplot3d.art3d import Poly3DCollection
         self.ax, self.model = ax, model
         self.show_model, self.show_skeleton, self.show_floor = show_model, show_skeleton, show_floor
-        self.mesh = Poly3DCollection([], linewidths=0.15, edgecolors=(0, 0, 0, 0.25))
+        self.mesh = Poly3DCollection([], linewidths=0, edgecolors='none', antialiaseds=False)
         ax.add_collection3d(self.mesh)
+        self.shadows = Poly3DCollection([], edgecolors='none', facecolors=(0, 0, 0, 0.12))
+        ax.add_collection3d(self.shadows)
         self.lines = []
         self.floor = None
         self._configure_axes()
 
     def _configure_axes(self):
         ax = self.ax
-        ax.set_facecolor((0.08, 0.1, 0.13))
+        ax.set_facecolor((0.055, 0.07, 0.095))
+        ax.set_proj_type('ortho')
         for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
             axis.set_pane_color((0.1, 0.12, 0.15, 1.0))
             axis.label.set_color("0.75")
@@ -262,15 +269,22 @@ class SpotScene:
         ax.set_box_aspect((1, 1, 0.55))
         ax.view_init(elev=18, azim=-60)
 
-    def draw(self, robots, center=None, span=0.32):
+    def draw(self, robots, center=None, span=0.32, zoom=1.0):
         """robots: lista de (skeleton, offset_xyz, etiqueta)."""
-        tris, cols = [], []
+        tris, cols, shadows = [], [], []
         for line in self.lines:
             line.remove()
         self.lines = []
 
         for skel, off, label in robots:
             off = np.asarray(off, float)
+            if self.show_floor:
+                p = skel['body'][1] + off
+                theta = np.linspace(0, 2 * np.pi, 48)
+                for scale in (1.0, 0.85, 0.7):
+                    shadows.append(np.column_stack((p[0] + 0.16 * scale * np.cos(theta),
+                                                    p[1] + 0.095 * scale * np.sin(theta),
+                                                    np.full_like(theta, -0.002))))
             if self.show_model:
                 t, c = self.model.world_triangles(skel, off)
                 tris.append(t)
@@ -288,16 +302,24 @@ class SpotScene:
             self.mesh.set_facecolor(shade(t, c))
         else:
             self.mesh.set_verts([])
+        self.shadows.set_verts(shadows)
 
         if center is None:
             offs = np.array([r[1] for r in robots]) if robots else np.zeros((1, 3))
             center = offs.mean(0)
-        half = span + np.ptp(np.array([r[1] for r in robots]), axis=0).max() / 2 if robots else span
+        spread = np.ptp(np.array([r[1] for r in robots]), axis=0) if robots else np.zeros(3)
+        hx, hy = span + spread[0] / 2, span + spread[1] / 2
         cx, cy = center[0], center[1]
-        self.ax.set_xlim(cx - half, cx + half)
-        self.ax.set_ylim(cy - half, cy + half)
-        self.ax.set_zlim(0, 1.1 * half)
-        self._draw_floor(cx, cy, half)
+        self.ax.set_xlim(cx - hx, cx + hx)
+        self.ax.set_ylim(cy - hy, cy + hy)
+        self.ax.set_zlim(-0.008, 0.34)
+        # Igual escala en los tres ejes: no estirar el robot para llenar el visor.
+        self.ax.set_box_aspect((2 * hx, 2 * hy, 0.348), zoom=zoom)
+        self._draw_floor(cx, cy, max(hx, hy))
+
+    def set_wireframe(self, enabled):
+        self.mesh.set_edgecolor((0.02, 0.03, 0.04, 0.28) if enabled else 'none')
+        self.mesh.set_linewidth(0.2 if enabled else 0)
 
     def _draw_skeleton(self, skel, off):
         r_body, p_body = skel["body"]
@@ -317,6 +339,6 @@ class SpotScene:
         g = np.linspace(-half, half, 9)
         for v in g:
             self.lines += self.ax.plot([cx + v, cx + v], [cy - half, cy + half], [0, 0],
-                                       color="0.3", lw=0.5)
+                                       color="#243345", lw=0.5)
             self.lines += self.ax.plot([cx - half, cx + half], [cy + v, cy + v], [0, 0],
-                                       color="0.3", lw=0.5)
+                                       color="#243345", lw=0.5)

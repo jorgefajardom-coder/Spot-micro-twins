@@ -17,7 +17,7 @@ from spot_dance import Dance
 from spot_model3d import SpotModel, SpotScene, solve_skeleton
 from spotmicro_gui import Kinematics
 
-BG = (0.08, 0.1, 0.13)
+BG = (0.055, 0.07, 0.095)
 TWIN_OFFSETS = [(0, 0.19, 0), (0, -0.19, 0)]
 
 
@@ -30,32 +30,46 @@ class Viewer:
         self.playing = True
         self.t = 0.0
         self.last = time.perf_counter()
+        self.zoom = 1.3
+        self.wireframe = False
 
-        self.fig = plt.figure("SpotMicro · Vista 3D", figsize=(11, 6.5), facecolor=BG)
-        self.ax = self.fig.add_axes([0.0, 0.08, 1.0, 0.9], projection="3d")
+        self.fig = plt.figure("Spot Micro Twins · Visor 3D", figsize=(12, 8), facecolor=BG)
+        self.ax = self.fig.add_axes([0.02, 0.18, 0.96, 0.69], projection="3d")
         self.ax.set_axis_off()
         self.scene = SpotScene(self.ax, self.model, show_skeleton=False)
-        self.ax.view_init(elev=18, azim=-58)
+        self.ax.view_init(elev=23, azim=-32)
 
-        self.title = self.fig.text(0.02, 0.94, "", color="w", fontsize=14, weight="bold")
-        self.info = self.fig.text(0.02, 0.905, "", color="0.65", fontsize=9)
-        self.fig.text(0.98, 0.02, f"modelo: {self.model.source} · {self.model.face_count} caras",
-                      color="0.5", fontsize=8, ha="right")
+        self.fig.text(0.04, 0.95, "SPOT MICRO  /  TWINS", color="#f4c542", fontsize=18, weight="bold")
+        self.fig.text(0.96, 0.95, "VISOR 3D", color="#8fa5be", fontsize=10, ha="right")
+        self.title = self.fig.text(0.04, 0.905, "", color="w", fontsize=11)
+        self.info = self.fig.text(0.96, 0.905, "", color="#8fa5be", fontsize=10, ha="right")
+        self.fig.text(0.04, 0.025, "Arrastra para girar · Rueda para acercar", color="#8fa5be", fontsize=9)
+        self.fig.text(0.96, 0.025, "Modelo CAD articulado", color="#8fa5be", fontsize=9, ha="right")
         self._build_controls()
+        self.fig.canvas.mpl_connect('scroll_event', self.on_scroll)
 
     def _build_controls(self):
-        def button(x, label, cb):
-            b = Button(self.fig.add_axes([x, 0.015, 0.1, 0.045]), label,
-                       color=(0.16, 0.19, 0.23), hovercolor=(0.25, 0.3, 0.36))
+        def button(x, label, cb, y=0.115):
+            b = Button(self.fig.add_axes([x, y, 0.13, 0.043]), label,
+                       color="#192536", hovercolor="#30435a")
             b.label.set_color("w")
+            b.label.set_fontsize(9)
+            for spine in b.ax.spines.values():
+                spine.set_edgecolor('#35465b')
             b.on_clicked(cb)
             return b
 
-        self.btn_play = button(0.02, "Pausa", self.toggle_play)
-        self.btn_restart = button(0.13, "Reiniciar", self.restart)
-        self.btn_twins = button(0.24, "1 Spot" if self.twins else "Gemelos", self.toggle_twins)
-        ax = self.fig.add_axes([0.36, 0.005, 0.2, 0.065], facecolor=BG)
-        self.checks = CheckButtons(ax, ["Modelo", "Esqueleto"], [True, False],
+        self.btn_play = button(0.04, "Pausa", self.toggle_play)
+        self.btn_restart = button(0.18, "Reiniciar", self.restart)
+        self.btn_twins = button(0.32, "Ver un robot" if self.twins else "Ver gemelos", self.toggle_twins)
+        self.camera_buttons = [button(x, name, lambda _, view=view: self.set_camera(view), y=0.062)
+                               for x, name, view in [(0.04, 'Perspectiva', (23, -32)),
+                                                     (0.18, 'Lateral', (0, -90)),
+                                                     (0.32, 'Superior', (90, -90))]]
+        ax = self.fig.add_axes([0.69, 0.055, 0.27, 0.11], facecolor=BG)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+        self.checks = CheckButtons(ax, ["Modelo", "Esqueleto", "Suelo", "Malla"], [True, False, True, False],
                                    frame_props={"edgecolor": "w", "facecolor": BG},
                                    check_props={"color": "#40c4ff"})
         for label in self.checks.labels:
@@ -72,13 +86,27 @@ class Viewer:
 
     def toggle_twins(self, _):
         self.twins = not self.twins
-        self.btn_twins.label.set_text("1 Spot" if self.twins else "Gemelos")
+        self.btn_twins.label.set_text("Ver un robot" if self.twins else "Ver gemelos")
 
     def toggle_layer(self, label):
         if label == "Modelo":
             self.scene.show_model = not self.scene.show_model
-        else:
+        elif label == "Esqueleto":
             self.scene.show_skeleton = not self.scene.show_skeleton
+        elif label == "Suelo":
+            self.scene.show_floor = not self.scene.show_floor
+        elif label == "Malla":
+            self.wireframe = not self.wireframe
+            self.scene.set_wireframe(self.wireframe)
+
+    def set_camera(self, view):
+        self.ax.view_init(elev=view[0], azim=view[1])
+        self.zoom = 1.3
+        self.fig.canvas.draw_idle()
+
+    def on_scroll(self, event):
+        if event.inaxes == self.ax:
+            self.zoom = min(1.9, max(0.7, self.zoom * (1.08 ** event.step)))
 
     # ----- animación -----
     def update(self, _frame):
@@ -92,8 +120,7 @@ class Viewer:
         for k, off in enumerate(offsets):
             feet, rot, body = self.dance.pose_at(self.t, mirror=(k == 1)).absolute()
             robots.append((solve_skeleton(self.kin, feet, rot, body), off, None))
-        self.scene.draw(robots, center=(0, 0, 0), span=0.22)
-        self.ax.set_zlim(0, 0.33)
+        self.scene.draw(robots, center=(0, 0, 0), span=0.20, zoom=self.zoom)
 
         self.title.set_text(self.dance.move_name_at(self.t).replace("_", " ").upper())
         self.info.set_text(f"{self.t:5.1f} / {self.dance.duration:.1f} s  ·  "

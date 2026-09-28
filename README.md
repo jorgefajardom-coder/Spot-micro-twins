@@ -137,6 +137,43 @@ python spotmicro_gui.py
 
 Cambia `ESP32_IP` al inicio del script por la IP del ESP32 (o `spotmicro.local`).
 
+La GUI valida los 12 ángulos antes de cada envío, incluyendo los límites por servo
+de la calibración, tanto en los controles inversos como en los diferenciales.
+Los valores inválidos bloquean el paquete completo; no se convierten en 180°.
+Las confirmaciones del IMU se muestran al recibir la respuesta del ESP32.
+
+### Visor 3D
+
+```bash
+python desktop/spot_viewer.py
+python desktop/spot_viewer.py --single
+```
+
+Modelo CAD articulado con iluminación de relleno, sombras de apoyo y escala
+uniforme en los tres ejes. Arrastra para girar y usa la rueda para acercar.
+Los botones permiten volver a la vista inicial o elegir lateral y superior;
+puedes activar el esqueleto, el suelo y la malla de triángulos por separado.
+
+![Visor de Spot Micro Twins](docs/assets/visor-3d.png)
+
+### Comprobaciones sin hardware
+
+```bash
+python -m unittest discover -s desktop/tests -v
+python desktop/spot_dance.py --check
+```
+
+Estas pruebas comprueban los envíos de ángulos, límites de calibración, respuestas
+del IMU y la cinemática del baile; no sustituyen la validación física del robot.
+
+### Código ESP32 original
+
+El sketch integrado original está completo en
+[`firmware/legacy/v5_integrated/v5_integrated.ino`](firmware/legacy/v5_integrated/v5_integrated.ino),
+incluido su `loop()`, y usa los marcadores `TU_SSID` y `TU_PASSWORD`.
+El firmware recomendado sigue siendo [`firmware/spotmicro_esp32`](firmware/spotmicro_esp32):
+las credenciales se configuran únicamente en `secrets.h`, excluido de Git.
+
 ### Protocolo WebSocket (puerto 81)
 
 | Mensaje del PC | Respuesta del ESP32 |
