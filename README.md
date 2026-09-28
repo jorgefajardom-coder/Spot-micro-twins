@@ -129,6 +129,13 @@ El monitor serie muestra la IP. También responde como `ws://spotmicro.local:81`
 
 ### GUI de escritorio
 
+En Windows, ejecuta `setup_env.bat` una vez y abre **`iniciar_interfaz.bat`**.
+Esta es la interfaz original del notebook: esqueleto 3D, sliders por pata,
+posición y rotación del cuerpo, calibración, joystick, rutinas y las pestañas
+de cinemática inversa y diferencial. El envío al ESP32 empieza desactivado.
+
+También puedes iniciarla desde una terminal:
+
 ```bash
 cd desktop
 pip install -r requirements.txt
@@ -143,6 +150,9 @@ Los valores inválidos bloquean el paquete completo; no se convierten en 180°.
 Las confirmaciones del IMU se muestran al recibir la respuesta del ESP32.
 
 ### Visor 3D
+
+Esta aplicación adicional reproduce el baile con el modelo CAD; para manejar
+el esqueleto con sliders usa la GUI de escritorio descrita arriba.
 
 ```bash
 python desktop/spot_viewer.py
