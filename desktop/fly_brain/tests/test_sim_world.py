@@ -11,7 +11,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from sim_world import (GAS_FOUND, LIDAR_ELEVATIONS, MAP_VOXEL, TEMP_AMBIENT, WALL_ROUGH, CaveWorld,
-                       _free)
+                       RealCave, _free)
 
 
 def free(world, x, y, z):
@@ -115,6 +115,38 @@ class Terrain(unittest.TestCase):
         self.assertGreater(np.ptp(f[:, 2]), 0.005)
         self.assertTrue(all(abs(a) <= 15 for a in rpy[:2]))
         self.assertTrue(free(w, *w.cave.point_at(3.0)[0], 0.15))  # el hueco sigue ahí
+
+
+KARST = Path(__file__).resolve().parents[2] / "caves" / "karst"
+
+
+@unittest.skipUnless(any(KARST.glob("*/octree.bin")), "cueva real sin descargar (caves/real_cave.py)")
+class RealCaveWorld(unittest.TestCase):
+    """La Grotte de la Sourde escaneada: ruta transitable, LiDAR y sensores sobre el suelo real."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.w = CaveWorld(cave=RealCave())
+
+    def test_route_is_long_and_wide_enough(self):
+        c = self.w.cave
+        self.assertGreater(c.s[-1], 6.0)                       # metros de galería transitable
+        self.assertGreater(2 * np.median(c.radius), 1.0)       # galería de mina: pasa una persona
+        self.assertGreater(np.median(c.ceiling), 2.0)           # de pie
+
+    def test_lidar_hits_the_real_rock(self):
+        w = self.w
+        w.lidar_scan(0.19 + float(w.ground(*w.pose[:2])))
+        hits, _ = w.last_scan
+        d = np.linalg.norm(hits[:, :2] - w.pose[:2], axis=1)
+        self.assertGreater(np.isfinite(d).mean(), 0.5)         # la mayoría de rayos tocan roca
+        self.assertLess(np.nanmin(d), 1.5)                     # paredes cerca del robot
+
+    def test_gas_grows_toward_the_leak(self):
+        w, c = self.w, self.w.cave
+        near = float(w.gas_ppm(c.point_at(w.gas_s - 1.0)[0])[0])
+        far = float(w.gas_ppm(c.point_at(1.0)[0])[0])
+        self.assertGreater(near, 10 * far)
 
 
 if __name__ == "__main__":

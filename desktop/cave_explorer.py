@@ -92,9 +92,10 @@ def integrate_sensors(mesh, samples, radius=INTERP_RADIUS, k=12):
     return mesh
 
 
-def build_cave_model(world, voxel=0.035):
+def build_cave_model(world, voxel=None):
     """Modelo completo (con techo) del escaneo de un CaveWorld, con gas y temperatura."""
     import pyvista as pv
+    voxel = voxel or 0.875 * getattr(world, "map_voxel", 0.04)
     mesh = reconstruct_surface(pv, world.map_points, world.ground, cut=None, voxel=voxel, sigma=1.15)
     if mesh is None:
         return None, None
