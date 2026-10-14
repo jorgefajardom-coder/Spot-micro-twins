@@ -219,7 +219,7 @@ def main():
     import os
     import sys
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from spotmicro_gui import Kinematics
+    from kinematics import Kinematics
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--gif", help="ruta del GIF a generar")

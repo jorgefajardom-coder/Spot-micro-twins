@@ -108,6 +108,9 @@ Todos los pines y constantes están en [`firmware/spotmicro_esp32/config.h`](fir
 | `firmware/spotmicro_esp32/` | **Firmware actual (V6)**: sketch modular, compila con PlatformIO o Arduino IDE |
 | `firmware/legacy/` | Versiones históricas V1–V5 (credenciales WiFi eliminadas) |
 | `desktop/spotmicro_gui.py` | GUI de control: cinemática inversa, PID, joystick, rutinas y gaits |
+| `desktop/kinematics.py` | IK y calibración sin interfaz (la usan GUI, visores y controladores externos) |
+| `desktop/gait.py` | Marchas con comando en vivo `set_command(vx, vy, giro)` |
+| `desktop/spot_walk.py` | Visor de marcha manejado con el teclado |
 | `desktop/notebooks/Kinematicsv1.ipynb` | Notebook con la evolución completa de la GUI |
 | `calibration/offset-default.json` | Offsets de los servos que usa la GUI |
 | `docs/` | Documentación técnica, póster e imágenes |
@@ -166,11 +169,33 @@ puedes activar el esqueleto, el suelo y la malla de triángulos por separado.
 
 ![Visor de Spot Micro Twins](docs/assets/visor-3d.png)
 
+### Marcha con comando en vivo
+
+`gait.py` recibe en cada momento avance, lateral y giro en [-1, 1], así que la
+dirección se puede cambiar mientras camina (sliders de la GUI, teclado o un
+controlador externo):
+
+```python
+from kinematics import Kinematics
+from gait import GaitManager
+
+gait = GaitManager(Kinematics())
+gait.set_gait("trotting")
+gait.set_command(0.8, 0.0, -0.3)   # avanza girando a la derecha
+feet = gait.step(0.02)             # 4 pies (x, y, z) para la IK
+```
+
+```bash
+python desktop/spot_walk.py   # W/S avanzar · A/D lateral · Q/E girar · 1/2/3 marcha
+python desktop/gait.py --check
+```
+
 ### Comprobaciones sin hardware
 
 ```bash
 python -m unittest discover -s desktop/tests -v
 python desktop/spot_dance.py --check
+python desktop/gait.py --check
 ```
 
 Estas pruebas comprueban los envíos de ángulos, límites de calibración, respuestas
@@ -229,7 +254,7 @@ Mismo protocolo que V5, así que la GUI funciona sin cambios.
 
 - Fail-safe: postura segura si no llegan comandos en N ms.
 - Guardar offsets del IMU en NVS (`Preferences`) para no recalibrar en cada arranque.
-- Pasar la GUI a módulos Python (`kinematics.py`, `gait.py`, `gui.py`…).
+- Terminar de separar la GUI en módulos (ya están `kinematics.py` y `gait.py`; falta `gui.py`, comunicación…).
 
 ---
 
