@@ -44,14 +44,18 @@ python ..\spot_brain.py --record spot.mp4  # grabarlo en vídeo
 
 ![El Spot persiguiendo un objetivo y huyendo de un obstáculo](../../docs/assets/spot_brain.gif)
 
-A la izquierda, grande, el robot (el CAD completo, 699.000 caras) en la cueva. A
-la derecha, dos pantallas a la vez en tres pestañas (botones o teclas `1`-`3`):
-**Cerebro · Mapa LiDAR**, **Ojos · Descendentes** e **Historia · Sensores**.
+La interfaz está en inglés. A la izquierda, grande, el robot (el CAD completo,
+699.000 caras) en la cueva. A la derecha, dos pantallas a la vez en tres pestañas
+(botones o teclas `1`-`3`): **Brain · LiDAR map**, **Eyes · Descending** e
+**History · Sensors**.
 
 El cerebro tiene la morfología real de cada neurona de FlyWire, en vista frontal
-fija (se gira con el ratón): cada neurona que dispara se ilumina entera, y de ella
-salen líneas hacia sus dianas más fuertes del conectoma (naranja excitatoria, azul
-inhibitoria). Las demás pantallas muestran el mapa LiDAR, los estímulos visuales,
+fija que llena la pantalla (se gira con el ratón), coloreada como las
+renderizaciones de FlyWire: un color por tipo celular, cian/turquesa/amarillo en
+los lóbulos ópticos y violeta/magenta/azul en el cerebro central. La actividad va
+en una capa encima con la misma cámara: las neuronas que disparan brillan en
+naranja dentro del cerebro, y sus sinapsis más fuertes salen del centro de su
+morfología (naranja excitatoria, azul inhibitoria). Las demás pantallas muestran el mapa LiDAR, los estímulos visuales,
 las descendentes, los últimos segundos de avance, giro y Giant Fiber, y los
 sensores de gas y temperatura. Render con PyVista/VTK (OpenGL con z-buffer, FXAA y
 oclusión ambiental).
@@ -63,7 +67,7 @@ oclusión ambiental).
 LiDAR (KarstConduitCatalogue, Racine et al. 2025, ERC Karst,
 [doi:10.60544/7rk6-rn14](https://doi.org/10.60544/7rk6-rn14), CC BY-NC 4.0),
 a escala 2:1: una **galería de mina por la que pasan personas** (~2,7 m de alto y
-1,2-1,8 m de ancho; un minero de 1,75 m de referencia), con la fuga a 14 m de la
+1,2-1,8 m de ancho), con la fuga a 14 m de la
 entrada. `../caves/real_cave.py` descarga la nube de
 puntos (Potree) la primera vez; de sus normales salen el suelo y el techo, la
 zona transitable y la ruta por el centro de la galería. Las paredes se pintan con
@@ -77,10 +81,10 @@ de roca. Con `--cueva generada` se usa la galería sintética de 16 m.
   contrario; desde 48 °C además entra como amenaza y la Giant Fiber lo hace huir.
 - **Terreno escarpado** (botón o tecla `t`): cada pie apoya a la altura real del
   suelo y el cuerpo se inclina con la pendiente (cabeceo y alabeo).
-- **LiDAR 3D** (96 × 8 rayos, 6 m, trazado con numba sobre una rejilla de la
-  cueva): las paredes cercanas lo desvían hacia el lado despejado y cada barrido
-  se acumula en un mapa de vóxeles de 5 cm, que el tercer panel dibuja sin techo
-  para ver la forma de la galería.
+- **LiDAR 360°** (96 azimuts × 18 elevaciones de −84° a +90°: suelo, paredes y
+  techo; 6 m, trazado con numba sobre una rejilla de la cueva): las paredes
+  cercanas lo desvían hacia el lado despejado y cada barrido se acumula en un mapa
+  de vóxeles, que el panel del mapa dibuja sin techo para ver la galería.
 
 En la prueba sin gráficos el cerebro completo encuentra la fuga en ~52 s en la
 cueva generada y en ~50 s en la galería de mina, en terreno plano y escarpado, sin
@@ -94,10 +98,12 @@ escaneo real.
 
 ### Detener el escaneo y explorar la cueva
 
-El botón **"Detener escaneo y generar la cueva 3D"** (panel del mapa) para al
+El botón **"Stop scan and build the 3D cave"** (panel del robot) para al
 robot, reconstruye la cueva entera (con techo) y la abre en `../cave_explorer.py`:
 
-- capas **Roca / Gas / Temperatura** y un deslizador para cortar el techo;
+- capas **Rock / Gas / Temperature**, un deslizador para cortar el techo (hasta la
+  altura total de la cueva) y el botón **Closed cave** para verla cerrada, con
+  su techo escaneado;
 - el gas y la temperatura de cada punto de la roca salen de las **mediciones
   reales de los sensores** a lo largo de la ruta (media ponderada por distancia,
   hasta 1,1 m); donde el robot no midió queda en gris, "sin datos";

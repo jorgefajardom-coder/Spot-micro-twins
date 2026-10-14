@@ -20,7 +20,7 @@ LIDAR_RANGE = 6.0           # m
 LIDAR_STEP = 0.02           # m por paso del trazado de rayos
 LIDAR_HEIGHT = 0.10         # m por encima del centro del cuerpo
 LIDAR_AZIMUTHS = 96         # rayos por vuelta
-LIDAR_ELEVATIONS = np.radians([-62, -52, -42, -33, -24, -15, -7, 0, 8, 18, 30, 44, 60])
+LIDAR_ELEVATIONS = np.radians([-84, -72, -60, -48, -36, -26, -16, -8, 0, 8, 16, 26, 36, 48, 60, 72, 84, 90])  # barrido vertical completo: suelo, paredes y techo
 MAP_VOXEL = 0.04            # m, resolución del mapa 3D acumulado
 WALL_ROUGH = 0.16           # rugosidad de la roca (fracción del tamaño de la galería)
 

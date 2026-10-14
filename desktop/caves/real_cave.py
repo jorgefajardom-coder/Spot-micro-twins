@@ -18,7 +18,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 BASE = "https://raw.githubusercontent.com/tr1813/karstconduitcatalogue-potree/main/potree/"
 TYPES = {"int32": "<i4", "uint16": "<u2", "uint8": "u1", "double": "<f8", "int8": "i1", "float": "<f4"}
-ATTRIBUTION = ("Cueva real: KarstConduitCatalogue, Racine et al. 2025 (ERC Karst), "
+ATTRIBUTION = ("Real cave: KarstConduitCatalogue, Racine et al. 2025 (ERC Karst), "
                "doi:10.60544/7rk6-rn14, CC BY-NC 4.0")
 
 
