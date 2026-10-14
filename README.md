@@ -190,6 +190,23 @@ python desktop/spot_walk.py   # W/S avanzar · A/D lateral · Q/E girar · 1/2/3
 python desktop/gait.py --check
 ```
 
+### Cerebro de mosca
+
+El Spot puede manejarse con el cerebro completo de *Drosophila* (conectoma FlyWire,
+138.639 neuronas) simulado en la GPU. En una cueva simulada sigue el rastro de una
+fuga de gas con el circuito de persecución de la mosca (LC10 → DNa02), rodea una
+fuente de calor y huye de las amenazas con la Giant Fiber, mientras un LiDAR 3D
+reconstruye la cueva. Tiene un botón de terreno escarpado. El simulador reproduce
+el modelo publicado de Shiu et al. (r = 0,999 neurona a neurona). Detalles en
+[`desktop/fly_brain/`](desktop/fly_brain/README.md).
+
+![Spot Micro con cerebro de mosca](docs/assets/spot_brain.gif)
+
+```bash
+cd desktop
+fly_brain\.venv\Scripts\python spot_brain.py
+```
+
 ### Comprobaciones sin hardware
 
 ```bash
