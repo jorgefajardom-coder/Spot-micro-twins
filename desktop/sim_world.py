@@ -142,6 +142,19 @@ class Cave:
         xyz = np.atleast_2d(xyz)
         return 1.0 + WALL_ROUGH * np.sum(self.wall_amp * np.sin(xyz @ self.wall_k.T + self.wall_phase), axis=1)
 
+
+    def floor(self, x, y):
+        return np.zeros(np.broadcast(np.asarray(x), np.asarray(y)).shape)
+
+    def wall_limit(self, i):
+        return self.radius[i] * (1 - WALL_ROUGH) - 0.2  # contando con los salientes de la roca
+
+    def raycast(self, origin, dirs, terrain, max_range, step):
+        t = terrain
+        return _raycast(origin, dirs, max_range, step, self.x0, self.y0, GRID_CELL, self.grid_dist,
+                        self.grid_radius, self.grid_ceil, t.rough, t.kx, t.ky, t.amp, t.phase,
+                        self.wall_k, self.wall_phase, self.wall_amp, WALL_ROUGH)
+
     def nearest(self, xy):
         """Índice del punto de la línea central más cercano y distancia a él."""
         d, i = self._tree.query(xy)
@@ -150,6 +163,169 @@ class Cave:
     def point_at(self, s):
         i = int(np.clip(round(s / (self.s[1] - self.s[0])), 0, len(self.s) - 1))
         return self.center[i], self.tangent[i], self.radius[i], self.ceiling[i]
+
+
+@njit(cache=True)
+def _raycast_occ(origin, dirs, max_range, step, lo, cell, occ, occ_cell, floor, rough, kx, ky, amp, phase):
+    """LiDAR contra una cueva real: ocupación 3D de la roca escaneada (rejilla occ_cell) + suelo
+    (rejilla cell, con el terreno escarpado opcional sumado encima)."""
+    n = dirs.shape[0]
+    hits = np.full((n, 3), np.nan)
+    ranges = np.full(n, np.nan)
+    nx, ny, nz = occ.shape
+    for r in range(n):
+        t = step
+        while t < max_range:
+            x = origin[0] + dirs[r, 0] * t
+            y = origin[1] + dirs[r, 1] * t
+            z = origin[2] + dirs[r, 2] * t
+            i = int((x - lo[0]) / occ_cell)
+            j = int((y - lo[1]) / occ_cell)
+            k = int((z - lo[2]) / occ_cell)
+            if i < 0 or j < 0 or k < 0 or i >= nx or j >= ny or k >= nz:
+                break  # fuera del escaneo: el rayo no vuelve
+            fi = min(int((x - lo[0]) / cell), floor.shape[0] - 1)
+            fj = min(int((y - lo[1]) / cell), floor.shape[1] - 1)
+            if occ[i, j, k] or z <= floor[fi, fj] + _terrain(x, y, rough, kx, ky, amp, phase):
+                hits[r, 0], hits[r, 1], hits[r, 2] = x, y, z
+                ranges[r] = t
+                break
+            t += step
+    return hits, ranges
+
+
+class RealCave:
+    """Cueva real escaneada con LiDAR (caves/real_cave.py). A escala 2:1 es una galería de mina
+    por la que pasan personas (~2,7 m de alto y 1,2-1,8 m de ancho; a 1:1 apenas 1,3 m).
+
+    A partir de los puntos: ocupación 3D (el LiDAR choca con la roca real), mapa del suelo
+    (los pies pisan el suelo real), zona transitable (techo > CLEARANCE y pendiente suave) y
+    una ruta por el centro de la galería (el camino más ancho de un extremo al otro), con la
+    misma interfaz que Cave: s, center, tangent, radius, ceiling, nearest, point_at.
+    """
+
+    CELL = 0.05        # m, vóxel de la ocupación y del mapa del suelo (a escala 1:2)
+    CLEARANCE = 0.42   # m de techo mínimo para que el robot pase (cuerpo + LiDAR)
+    MAX_SLOPE = 0.6    # pendiente máxima transitable (tan ~31°)
+
+    def __init__(self, name="GrotteDeLaSourde/EntranceGallery", scale=2.0, ds=0.1):
+        import sys
+        from pathlib import Path
+        from scipy import ndimage
+        from scipy.sparse import coo_matrix
+        from scipy.sparse.csgraph import dijkstra
+        sys.path.insert(0, str(Path(__file__).resolve().parent / "caves"))
+        from real_cave import ATTRIBUTION, load_points
+
+        self.kind, self.name, self.attribution, self.scale = "real", name, ATTRIBUTION, scale
+        pts, rgb, normals = load_points(name)
+        pts = (pts - pts.min(0)) * scale
+        self.points, self.colors = pts, rgb
+        # La rejilla escala con la cueva: la densidad del escáner es la misma a cualquier escala
+        self.CELL = c = self.CELL * scale / 0.5
+        # El LiDAR choca con una ocupación más fina: con la rejilla grande, el suelo dilatado
+        # taparía el sensor (rejilla de la ruta y del suelo: CELL; de la roca: occ_cell)
+        self.occ_cell = oc = 0.05 * max(1.0, scale)
+        lo_occ = np.array([-2 * c, -2 * c, -2 * c])
+        dims_o = np.ceil((pts.max(0) - lo_occ) / oc).astype(int) + 3
+        fine = np.zeros(dims_o, bool)
+        io = np.floor((pts - lo_occ) / oc).astype(int)
+        fine[io[:, 0], io[:, 1], io[:, 2]] = True
+        self.lo = np.array([-2 * c, -2 * c, -2 * c])
+        dims = np.ceil((pts.max(0) - self.lo) / c).astype(int) + 3
+        occ = np.zeros(dims, bool)
+        idx = np.floor((pts - self.lo) / c).astype(int)
+        occ[idx[:, 0], idx[:, 1], idx[:, 2]] = True
+        self.occ = ndimage.binary_dilation(fine, iterations=1)  # sin huecos entre muestras
+
+        # Suelo y techo según la normal (las paredes no cuentan): así un hueco del muestreo en el
+        # suelo no hace que el techo pase por suelo. En este escaneo las normales apuntan hacia
+        # la roca: el suelo tiene la normal hacia abajo y el techo hacia arriba.
+        ij = np.floor((pts[:, :2] - self.lo[:2]) / c).astype(int)
+        shape = dims[:2]
+        nz = normals[:, 2] if normals is not None else np.zeros(len(pts))
+        up, down = nz < -0.5, nz > 0.3  # up: suelo, down: techo
+        floor = np.full(shape, np.inf)
+        np.minimum.at(floor, (ij[up, 0], ij[up, 1]), pts[up, 2])
+        ceil = np.full(shape, np.inf)
+        np.minimum.at(ceil, (ij[down, 0], ij[down, 1]), pts[down, 2])
+        inside = ndimage.binary_closing(occ.any(axis=2), iterations=3)
+        has_floor = np.isfinite(floor)
+        _, (ii, jj) = ndimage.distance_transform_edt(~has_floor, return_indices=True)
+        self.floor_grid = np.where(has_floor, floor, floor[ii, jj])  # huecos: la celda con suelo más cercana
+        self.floor_grid = ndimage.median_filter(self.floor_grid, 3)
+        self.floor_grid = ndimage.gaussian_filter(self.floor_grid, 2.0)  # sin escalones para los pies
+        ceil = np.where(np.isfinite(ceil) & (ceil > self.floor_grid + 0.05), ceil, self.floor_grid + 3.0)
+        clearance = ceil - self.floor_grid
+        gy, gx = np.gradient(ndimage.gaussian_filter(self.floor_grid, 2), c)
+        walk = inside & (clearance > self.CLEARANCE) & (np.hypot(gx, gy) < self.MAX_SLOPE)
+        walk = ndimage.binary_opening(walk, iterations=1)
+        lab, n = ndimage.label(walk)
+        walk = lab == (np.argmax(np.bincount(lab.ravel())[1:]) + 1)  # la zona transitable mayor
+        width = ndimage.distance_transform_edt(walk) * c
+
+        # Ruta: de un extremo de la galería al otro por donde es más ancha
+        cells = np.argwhere(walk)
+        xy = cells * c + self.lo[:2]
+        axis = np.linalg.svd(xy - xy.mean(0), full_matrices=False)[2][0]
+        along = xy @ axis
+        a, b = cells[np.argmin(along)], cells[np.argmax(along)]
+        index = -np.ones(walk.shape, int)
+        index[walk] = np.arange(len(cells))
+        rows, cols, cost = [], [], []
+        for di, dj in ((1, 0), (0, 1), (1, 1), (1, -1)):
+            src = cells
+            dst = cells + (di, dj)
+            ok = (dst[:, 0] < walk.shape[0]) & (dst[:, 1] >= 0) & (dst[:, 1] < walk.shape[1])
+            src, dst = src[ok], dst[ok]
+            ok = walk[dst[:, 0], dst[:, 1]]
+            src, dst = src[ok], dst[ok]
+            w = np.hypot(di, dj) / (0.05 + np.minimum(width[src[:, 0], src[:, 1]], width[dst[:, 0], dst[:, 1]])) ** 2
+            rows.append(index[src[:, 0], src[:, 1]])
+            cols.append(index[dst[:, 0], dst[:, 1]])
+            cost.append(w)
+        graph = coo_matrix((np.concatenate(cost), (np.concatenate(rows), np.concatenate(cols))),
+                           shape=(len(cells), len(cells))).tocsr()
+        _, pred = dijkstra(graph, directed=False, indices=index[tuple(a)], return_predecessors=True)
+        path, node = [], index[tuple(b)]
+        while node >= 0:
+            path.append(node)
+            node = pred[node]
+        route = cells[path[::-1]] * c + self.lo[:2] + c / 2
+        route = ndimage.uniform_filter1d(route, 15, axis=0, mode="nearest")  # suavizar
+        seg = np.r_[0, np.cumsum(np.hypot(*np.diff(route, axis=0).T))]
+        self.s = np.arange(0, seg[-1], ds)
+        self.center = np.column_stack([np.interp(self.s, seg, route[:, k]) for k in (0, 1)])
+        tangent = np.gradient(self.center, axis=0)
+        self.tangent = tangent / np.linalg.norm(tangent, axis=1, keepdims=True)
+        ij = np.floor((self.center - self.lo[:2]) / c).astype(int)
+        self.radius = np.maximum(width[ij[:, 0], ij[:, 1]], 0.3)
+        self.ceiling = clearance[ij[:, 0], ij[:, 1]]
+        self.walkable = walk
+        self._tree = cKDTree(self.center)
+
+    def nearest(self, xy):
+        d, i = self._tree.query(xy)
+        return int(i), float(d)
+
+    def point_at(self, s):
+        i = int(np.clip(round(s / (self.s[1] - self.s[0])), 0, len(self.s) - 1))
+        return self.center[i], self.tangent[i], self.radius[i], self.ceiling[i]
+
+    def floor(self, x, y):
+        x, y = np.asarray(x, float), np.asarray(y, float)
+        i = np.clip(((x - self.lo[0]) / self.CELL).astype(int), 0, self.floor_grid.shape[0] - 1)
+        j = np.clip(((y - self.lo[1]) / self.CELL).astype(int), 0, self.floor_grid.shape[1] - 1)
+        return self.floor_grid[i, j]
+
+    def wall_limit(self, i):
+        """Distancia máxima del cuerpo a la ruta (la zona transitable menos el cuerpo)."""
+        return max(0.05, self.radius[i] - 0.15)
+
+    def raycast(self, origin, dirs, terrain, max_range, step):
+        t = terrain
+        return _raycast_occ(origin, dirs, max_range, step, self.lo, self.CELL, self.occ, self.occ_cell,
+                            self.floor_grid, t.rough, t.kx, t.ky, t.amp, t.phase)
 
 
 class Terrain:
@@ -176,15 +352,21 @@ class Terrain:
 class CaveWorld:
     """Estado del mundo: robot, cueva, gas, calor, LiDAR y mapa acumulado."""
 
-    def __init__(self, seed=3):
-        self.cave = Cave(seed)
+    def __init__(self, seed=3, cave=None):
+        self.cave = cave if cave is not None else Cave(seed)
         self.terrain = Terrain(seed + 4)
         n = len(self.cave.s)
-        self.gas_s = self.cave.s[int(0.85 * n)]             # fuga al fondo de la galería
+        real = getattr(self.cave, "kind", "") == "real"
+        # Fuga al fondo de la galería (en la mina, a 14 m como mucho: la misión dura ~1 min)
+        self.gas_s = min(self.cave.s[int(0.85 * n)], 14.0) if real else self.cave.s[int(0.85 * n)]
+        self.map_voxel = MAP_VOXEL * max(1.0, getattr(self.cave, "scale", 1.0))  # galería grande, mapa más grueso
         self.gas_xy = self.cave.point_at(self.gas_s)[0]
-        c, t, r, _ = self.cave.point_at(self.cave.s[int(0.45 * n)])
+        # Fuente de calor: una grieta caliente en la pared a mitad de recorrido. En la galería
+        # generada está dentro de la sala; en la real, en el borde de la roca, para que se pueda
+        # pasar rodeándola sin quedar bloqueado.
+        c, t, r, _ = self.cave.point_at(0.5 * self.gas_s if real else self.cave.s[int(0.45 * n)])
         normal = np.array([-t[1], t[0]])
-        self.heat_xy = c + normal * 0.3                       # fuente de calor en la sala, cerca del paso
+        self.heat_xy = c + normal * (r + 0.3 if real else 0.3)
         self.obstacle = None
         self.reset_robot()
 
@@ -215,7 +397,7 @@ class CaveWorld:
         return TEMP_AMBIENT + 75.0 * np.exp(-d2 / (2 * 0.32 ** 2))
 
     def ground(self, x, y):
-        return self.terrain.height(x, y)
+        return self.cave.floor(x, y) + self.terrain.height(x, y)
 
     # ----- LiDAR -----
     def lidar_scan(self, body_z):
@@ -225,10 +407,7 @@ class CaveWorld:
         dirs = np.column_stack([(np.cos(E) * np.cos(A)).ravel(), (np.cos(E) * np.sin(A)).ravel(),
                                 np.sin(E).ravel()])
         origin = np.array([self.pose[0], self.pose[1], body_z + LIDAR_HEIGHT])
-        c, t = self.cave, self.terrain
-        hits, ranges = _raycast(origin, dirs, LIDAR_RANGE, LIDAR_STEP, c.x0, c.y0, GRID_CELL, c.grid_dist,
-                                c.grid_radius, c.grid_ceil, t.rough, t.kx, t.ky, t.amp, t.phase,
-                                c.wall_k, c.wall_phase, c.wall_amp, WALL_ROUGH)
+        hits, ranges = self.cave.raycast(origin, dirs, self.terrain, LIDAR_RANGE, LIDAR_STEP)
         self.last_scan = (hits, ranges.reshape(LIDAR_AZIMUTHS, len(LIDAR_ELEVATIONS)))
         self._add_to_map(hits[~np.isnan(ranges)])
         return self.last_scan
@@ -236,7 +415,7 @@ class CaveWorld:
     def _add_to_map(self, pts):
         if not len(pts):
             return
-        v = np.floor(pts / MAP_VOXEL).astype(np.int64) + 50_000
+        v = np.floor(pts / self.map_voxel).astype(np.int64) + 50_000
         keys = (v[:, 0] * 100_000 + v[:, 1]) * 100_000 + v[:, 2]
         keys, first = np.unique(keys, return_index=True)
         new = ~np.isin(keys, self.map_keys, assume_unique=True)
@@ -328,7 +507,7 @@ class CaveWorld:
         self.pose += dt * np.array([vx * c - vy * s, vx * s + vy * c, wz])
         # La pared es sólida: si el cuerpo se mete, vuelve hacia el centro de la galería
         i, d = self.cave.nearest(self.pose[:2])
-        limit = self.cave.radius[i] * (1 - WALL_ROUGH) - 0.2  # contando con los salientes de la roca
+        limit = self.cave.wall_limit(i)
         if d > limit:
             centre = self.cave.center[i]
             self.pose[:2] = centre + (self.pose[:2] - centre) * (limit / d)

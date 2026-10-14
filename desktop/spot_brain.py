@@ -2,9 +2,12 @@
 rodea las fuentes de calor y mapea la cueva con un LiDAR 3D.
 
 El conectoma completo de FlyWire (138.639 neuronas) decide; gait.py camina; sim_world.py
-simula la cueva, el gas, el calor, el terreno y el LiDAR. Tres paneles:
+simula la cueva, el gas, el calor, el terreno y el LiDAR. Por defecto la cueva es real: la
+Grotte de la Sourde escaneada con LiDAR (KarstConduitCatalogue, Racine et al. 2025).
 
-    robot en la cueva  |  cerebro de la mosca  |  mapa 3D del LiDAR
+    robot en la cueva  |  cerebro           |  mapa LiDAR
+                       |  ojos              |  descendentes
+                       |  últimos segundos  |  sensores
 
 Los sensores entran al cerebro por sustitución sensorial (ver sim_world.CaveWorld.senses):
 en este modelo las vías olfativa y térmica saturan y no dan dirección, así que el gradiente
@@ -15,6 +18,7 @@ Se ejecuta con el entorno de fly_brain (CuPy/numba, PyVista y los datos de FlyWi
 
     fly_brain\\.venv\\Scripts\\python spot_brain.py
     fly_brain\\.venv\\Scripts\\python spot_brain.py --record spot.mp4 --seconds 30 --speed 2
+    fly_brain\\.venv\\Scripts\\python spot_brain.py --cueva generada
 
 Teclas:  t terreno escarpado (o el botón) · espacio lanzar un obstáculo · r reiniciar
 """
@@ -33,21 +37,23 @@ from cave_explorer import (MAP_BG, SCAN_COLORS, Explorer, build_cave_model, grad
                            reconstruct_surface, save_model)
 from gait import BODY_HEIGHT, GaitManager  # noqa: E402
 from kinematics import Kinematics  # noqa: E402
-from sim_world import TEMP_AVOID, CaveWorld  # noqa: E402
+from sim_world import TEMP_AVOID, CaveWorld, RealCave  # noqa: E402
 from spot_model3d import BONES, DEFAULT_MODEL_FILE, SpotModel, solve_skeleton  # noqa: E402
 
 # Modelo de alta resolución (models/build_model.py --full); si no existe, el ligero
 HD_MODEL_FILE = HERE / "models" / "spot_model_hd.npz"
 
-WINDOW = (1920, 1000)
-COLUMNS = [0.42, 0.29, 0.29]                   # robot | cerebro | mapa
+WINDOW = (1920, 1040)
+ROBOT_WIDTH = 0.44                             # fracción del ancho para el robot; el resto, pestañas
+TAB_BAR = 0.055                                # fracción del alto para la barra de pestañas
+BORDER = "#26354a"                              # borde entre pantallas
 BG = "#0e1218"
 YELLOW, CYAN, RED, GREEN, GREY = "#f4c542", "#40c4ff", "#ff5252", "#69f0ae", "#8fa5be"
 ORANGE, GAS_GREEN = "#ff7a1a", "#7dff6b"
 VOXEL_UM = np.array([0.004, 0.004, 0.040])    # tamaño de vóxel de FlyWire en µm (x, y, z)
 ACTIVITY_TAU_MS = 120.0                        # cuánto tarda en apagarse una neurona en pantalla
 HISTORY_S = 8.0                                # segundos en las gráficas de historia
-BRAIN_SPIN_DEG_S = 6.0                         # giro lento de la vista del cerebro
+BRAIN_ELEVATION_DEG = 0.0                      # vista frontal del cerebro
 MAX_SYNAPSE_SOURCES = 220                      # neuronas que dibujan sus sinapsis por fotograma
 SYNAPSES_PER_NEURON = 3                        # sus conexiones más fuertes
 SYN_EXCITATORY, SYN_INHIBITORY = "#ffb347", "#4fc3f7"
@@ -55,10 +61,14 @@ SYN_EXCITATORY, SYN_INHIBITORY = "#ffb347", "#4fc3f7"
 NEURON_PALETTE = ["#ff4fd8", "#b45cff", "#7a5cff", "#4f7dff", "#3db8ff", "#29e3d8", "#ffd23f", "#ff6f91"]
 ACTIVE_THRESHOLD = 0.12                        # actividad a partir de la que una neurona brilla
 MAX_ACTIVE_DRAWN = 1500                        # neuronas activas dibujadas con su morfología
-CAMERA_OFFSET = np.array([-0.78, -1.0, 0.68])   # cámara del robot respecto a él (~1,4 m)
-MAP_CAMERA_OFFSET = np.array([-4.8, -6.2, 7.6])  # cámara del mapa: lejos y desde arriba (toda la galería)
+CAMERA_OFFSET = np.array([-1.0, -1.3, 0.95])    # cámara del robot respecto a él (~1,9 m)
+REAL_CAMERA_OFFSET = np.array([-2.1, -2.6, 1.0])   # en la galería de mina, más lejos y bajo (~3,5 m)
+MAP_CAMERA_OFFSET = np.array([-3.4, -4.4, 5.6])  # cámara del mapa: desde arriba, siguiendo al robot
 MAP_CUT = 0.5                                     # m: el mapa enseña solo lo de debajo (sin el techo)
+REAL_MAP_CUT = 1.2                                # m: lo mismo en la galería de mina
 MAP_MESH_PERIOD = 1.5                             # s: cada cuánto se reconstruye la superficie del mapa
+CAVE_CULLING = "front"                            # se ve la cara de la galería, no la de delante
+REAL_CAVE_CUT = 1.3                               # m sobre el suelo: techo quitado para ver al robot
 
 GAIT_SPEED = 1.5
 
@@ -276,11 +286,71 @@ def gas_particles(world, n=2600, seed=5):
         q = rng.uniform(-0.85, 0.85, len(s))
         normal = np.column_stack([-t[:, 1], t[:, 0]])
         xy = c + normal * (q * r)[:, None]
-        z = rng.uniform(0.02, 1, len(s)) * h * np.sqrt(1 - q ** 2) * 0.9
+        z = world.ground(xy[:, 0], xy[:, 1]) + rng.uniform(0.02, 1, len(s)) * min(h.min(), 0.8) * np.sqrt(1 - q ** 2) * 0.9
         ppm = world.gas_ppm(xy)
         keep = rng.uniform(0, 1, len(s)) < ((ppm - 5) / 900) ** 0.6
         pts.append(np.column_stack([xy[keep], z[keep]]))
     return np.concatenate(pts)[:n]
+
+
+def rock_detail(points, seed=0):
+    """Grano fino de roca (varias octavas de ondas 3D) para dar textura al suelo y las paredes."""
+    rng = np.random.default_rng(seed)
+    n = np.zeros(len(points))
+    for octave in range(5):
+        k = rng.normal(size=(3, 3)) * (6.0 * 2.1 ** octave)
+        n += np.sin(points @ k + rng.uniform(0, 2 * np.pi, 3)).sum(axis=1) / (1.7 ** octave)
+    return n / np.abs(n).max()
+
+
+def real_cave_mesh(pv, cave, cut=REAL_CAVE_CUT):
+    """Superficie de la cueva real con los colores del escáner y grano de roca, sin el techo.
+
+    La superficie sale de los puntos LiDAR (misma reconstrucción que el mapa) y cada vértice
+    toma el color del punto escaneado más cercano. Se quita lo que queda a más de `cut` sobre
+    el suelo para ver al robot desde arriba.
+    """
+    from scipy.spatial import cKDTree
+    surf = reconstruct_surface(pv, cave.points, cave.floor, cut=None, voxel=0.07 * cave.scale, sigma=1.0)
+    height = surf.points[:, 2] - cave.floor(surf.points[:, 0], surf.points[:, 1])
+    surf.point_data["h"] = height
+    surf = surf.clip_scalar(scalars="h", value=cut, invert=True)
+    # La reconstrucción es una lámina con dos caras: se queda solo la que mira a la galería
+    # (sin la de fuera, la pared cercana no tapa al robot con culling)
+    surf = surf.compute_normals(cell_normals=True, point_normals=False, auto_orient_normals=False,
+                                consistent_normals=False)
+    centers = surf.cell_centers().points
+    axis = np.column_stack([cave.center, cave.floor(cave.center[:, 0], cave.center[:, 1]) + 0.25])
+    _, i = cKDTree(cave.center).query(centers[:, :2])
+    to_axis = axis[i] - centers  # hacia el aire de la galería
+    dist = np.linalg.norm(to_axis, axis=1)
+    facing = np.einsum("ij,ij->i", surf.cell_data["Normals"], to_axis) > 0
+    inner = facing if np.median(dist[facing]) < np.median(dist[~facing]) else ~facing
+    surf = surf.extract_cells(np.flatnonzero(inner)).extract_surface()
+    # Fuera las astillas sueltas que deja el recorte (se cruzarían delante del robot)
+    surf = surf.connectivity("all")
+    sizes = np.bincount(surf.cell_data["RegionId"])
+    keep = np.flatnonzero(sizes[surf.cell_data["RegionId"]] > 0.02 * surf.n_cells)
+    surf = surf.extract_cells(keep).extract_surface()
+    height = surf.point_data["h"]
+    height = surf.point_data["h"]
+    # Luminosidad del escáner promediada entre vecinos (un punto suelto es puro ruido)
+    if cave.colors is not None:
+        _, idx = cKDTree(cave.points).query(surf.points, k=16)
+        lum = cave.colors[idx].astype(float).mean(axis=(1, 2))
+        lo, hi = np.percentile(lum, [3, 97])
+        lum = np.clip((lum - lo) / (hi - lo), 0, 1)
+    else:
+        lum = np.full(surf.n_points, 0.5)
+    rock = np.array([hex_rgb(c) for c in ("#3a332b", "#b8aa92")]) * 255   # caliza: sombra / luz
+    rgb = rock[0] + lum[:, None] * (rock[1] - rock[0])
+    mud = np.array(hex_rgb("#6f5a45")) * 255                              # sedimento del suelo
+    floor = np.clip(1 - height / 0.12, 0, 1)[:, None]
+    rgb = rgb * (1 - 0.55 * floor) + mud * 0.55 * floor
+    grain = rock_detail(surf.points)
+    shade = 1.0 + (0.18 + 0.12 * floor[:, 0]) * grain                      # el suelo, más granulado
+    surf.point_data["rgb"] = np.clip(rgb * shade[:, None], 0, 255).astype(np.uint8)
+    return surf
 
 
 # =============================================================================
@@ -288,7 +358,22 @@ def gas_particles(world, n=2600, seed=5):
 # =============================================================================
 
 class BrainViewer:
-    def __init__(self, device="auto", off_screen=False, size=WINDOW):
+    """Robot en la cueva a la izquierda; a la derecha dos pantallas a la vez, en tres pestañas:
+
+        1  cerebro          / mapa LiDAR
+        2  ojos (estímulo)  / descendentes
+        3  últimos segundos / sensores (gas y temperatura)
+    """
+
+    # Cada pantalla es un renderer propio; el layout (viewports) lo fija _layout según la pestaña
+    ROBOT, TABBAR = (0, 0), (0, 1)
+    BRAIN, MAP = (1, 0), (1, 1)
+    EYES, DNS = (2, 0), (2, 1)
+    HISTORY, SENSORS = (3, 0), (3, 1)
+    TABS = (("Cerebro · Mapa LiDAR", BRAIN, MAP), ("Ojos · Descendentes", EYES, DNS),
+            ("Historia · Sensores", HISTORY, SENSORS))
+
+    def __init__(self, device="auto", off_screen=False, size=WINDOW, cave="real"):
         import pyvista as pv
         from connectome import Connectome
         from pilot import FlyPilot, Senses
@@ -306,16 +391,18 @@ class BrainViewer:
         self.gait = GaitManager(self.kin)
         self.gait.set_gait("trotting")
         self.gait.gait_speed = GAIT_SPEED
-        self.world = CaveWorld()
+        self.world = CaveWorld(cave=RealCave() if cave == "real" else None)
+        self.real = getattr(self.world.cave, "kind", "") == "real"
         self.readings = {"gas_ppm": 0.0, "temp_c": 0.0, "modo": "explorando"}
         self.activity = np.zeros(self.connectome.n, np.float32)
         self.cmd = None
-        self.focus = np.r_[self.world.pose[:2], 0.12]
-        self.map_focus = self.focus.copy()
+        z0 = float(self.world.ground(*self.world.pose[:2]))
+        self.focus = np.r_[self.world.pose[:2], z0 + 0.12]
+        self.map_focus = np.r_[self.world.pose[:2], z0 + 0.3]
         self.last = time.perf_counter()
         self.last_dt = 0.04
         self.t = 0.0
-        self.hist_t, self.hist = [], {}
+        self.hist_t, self.hist, self.hist_lines = [], {}, {}
         self.scanning = True
         self.off_screen = off_screen
         self.saved_model = None
@@ -323,19 +410,69 @@ class BrainViewer:
         self.syn_post, self.syn_sign = top_targets(self.connectome.weights, SYNAPSES_PER_NEURON)
 
         pv.global_theme.font.family = "arial"
-        self.pl = pv.Plotter(shape=(1, 3), col_weights=COLUMNS, window_size=size, off_screen=off_screen,
-                             border=False, title="Spot Micro Twins · Cerebro de mosca en la cueva")
+        self.pl = pv.Plotter(shape=(4, 2), window_size=size, off_screen=off_screen, border=False,
+                             title="Spot Micro Twins · Cerebro de mosca en la cueva")
         self.pl.set_background(BG)
         self._build_robot()
         self._build_brain()
         self._build_map()
+        self._build_charts()
+        self._build_tabs()
         # FXAA: SSAA renderiza al doble (descoloca las gráficas 2D) y MSAA rompe el SSAO
         self.pl.enable_anti_aliasing("fxaa")
 
-    # ----- panel 1: el robot en la cueva -----
+    def _panel_height(self):
+        return int(self.H * (1 - TAB_BAR) / 2)
+
+    def _renderer(self, loc):
+        return self.pl.renderers[self.pl.renderers.loc_to_index(loc)]
+
+    def _layout(self):
+        """Robot a la izquierda, barra de pestañas arriba a la derecha y las dos pantallas de la
+        pestaña activa una encima de otra; las demás no se dibujan."""
+        rw, top = ROBOT_WIDTH, 1 - TAB_BAR
+        self._renderer(self.ROBOT).SetViewport(0, 0, rw, 1)
+        self._renderer(self.TABBAR).SetViewport(rw, top, 1, 1)
+        _, upper, lower = self.TABS[self.tab]
+        for _, *locs in self.TABS:
+            for loc in locs:
+                ren = self._renderer(loc)
+                shown = loc in (upper, lower)
+                ren.SetDraw(shown)
+                ren.SetInteractive(shown)
+                if shown:
+                    ren.SetViewport(rw, top / 2 if loc == upper else 0, 1, top if loc == upper else top / 2)
+                else:
+                    ren.SetViewport(0, 0, 1e-4, 1e-4)
+
+    def set_tab(self, i):
+        """Pestañas 1-3 (botones o teclas): qué dos pantallas se ven."""
+        self.tab = i
+        for k, button in enumerate(self.tab_buttons):
+            button.GetRepresentation().SetState(int(k == i))
+        self._layout()
+        self.pl.render()
+
+    def _build_tabs(self):
+        pl = self.pl
+        pl.subplot(*self.TABBAR)
+        pl.set_background("#151c27", all_renderers=False)
+        self.tab_buttons = []
+        for i, (name, *_) in enumerate(self.TABS):
+            x = 16 + i * 330
+            self.tab_buttons.append(pl.add_checkbox_button_widget(
+                lambda on, i=i: self.set_tab(i), value=i == 0, position=(x, 14), size=26, border_size=2,
+                color_on=CYAN, color_off="#2a3646", background_color="#8fa5be"))
+            pl.add_text(f"{i + 1}  {name}", position=(x + 36, 17), font_size=11, color="w")
+        for ren in self.pl.renderers:
+            ren.add_border(color=BORDER, width=2)  # en coordenadas del panel: sigue al layout
+        self.tab = 0
+        self._layout()
+
+    # ----- el robot en la cueva -----
     def _build_robot(self):
-        pv, pl, H = self.pv, self.pl, self.H
-        pl.subplot(0, 0)
+        pv, pl, H, w = self.pv, self.pl, self.H, self.world
+        pl.subplot(*self.ROBOT)
         hd = HD_MODEL_FILE.exists()
         model = SpotModel(self.kin, str(HD_MODEL_FILE if hd else DEFAULT_MODEL_FILE))
         print(f"Modelo del robot: {model.source} ({model.face_count:,} caras)".replace(",", "."))
@@ -346,20 +483,32 @@ class BrainViewer:
         self.leg_actors = [{bone: [pl.add_mesh(mesh(p), **style) for p in model.legs[leg][bone]]
                             for bone in BONES} for leg in range(4)]
 
-        rock = dict(scalars="roca", cmap=gradient(["#2a211c", "#4d4036", "#6e6253", "#8a7c69"]), clim=[0.2, 1.0],
-                    show_scalar_bar=False, smooth_shading=True, ambient=0.3, diffuse=0.75, specular=0.05)
-        shell = pl.add_mesh(cave_shell(pv, self.world.cave), **rock)
-        shell.prop.culling = "front"  # la pared que mira a la cámara no tapa al robot
-        self.floor_mesh = cave_floor(pv, self.world)
-        pl.add_mesh(self.floor_mesh, **rock)
+        if self.real:
+            self.cave_mesh = real_cave_mesh(pv, w.cave)
+            self.cave_base_z = self.cave_mesh.points[:, 2].copy()
+            self.cave_floor_mask = self.cave_mesh.point_data["h"] < 0.06  # vértices del suelo
+            real = pl.add_mesh(self.cave_mesh, scalars="rgb", rgb=True, smooth_shading=True, ambient=0.3,
+                               diffuse=0.8, specular=0.08)
+            real.prop.culling = CAVE_CULLING  # la pared que mira a la cámara no tapa al robot
+        else:
+            rock = dict(scalars="roca", cmap=gradient(["#2a211c", "#4d4036", "#6e6253", "#8a7c69"]),
+                        clim=[0.2, 1.0], show_scalar_bar=False, smooth_shading=True, ambient=0.3,
+                        diffuse=0.75, specular=0.05)
+            shell = pl.add_mesh(cave_shell(pv, w.cave), **rock)
+            shell.prop.culling = "front"  # la pared que mira a la cámara no tapa al robot
+            self.floor_mesh = cave_floor(pv, w)
+            pl.add_mesh(self.floor_mesh, **rock)
 
         # Fuente de calor: núcleo incandescente y halo
-        hx, hy = self.world.heat_xy
-        pl.add_mesh(pv.Sphere(radius=0.07, center=(hx, hy, 0.06)), color=ORANGE, ambient=1.0, diffuse=0.0)
-        pl.add_mesh(pv.Sphere(radius=0.32, center=(hx, hy, 0.12)), color=RED, opacity=0.12, ambient=1.0,
+        hx, hy = w.heat_xy
+        hz = float(w.ground(hx, hy))
+        pl.add_mesh(pv.Sphere(radius=0.07, center=(hx, hy, hz + 0.08)), color=ORANGE, ambient=1.0, diffuse=0.0)
+        pl.add_mesh(pv.Sphere(radius=0.32, center=(hx, hy, hz + 0.14)), color=RED, opacity=0.12, ambient=1.0,
                     diffuse=0.0)
+        if self.real:
+            self._add_miner(pv, pl, w)
         # Penacho de gas
-        pl.add_mesh(pv.PolyData(gas_particles(self.world)), color=GAS_GREEN, point_size=7, opacity=0.22,
+        pl.add_mesh(pv.PolyData(gas_particles(w)), color=GAS_GREEN, point_size=7, opacity=0.22,
                     render_points_as_spheres=True, ambient=0.8)
         # LiDAR: puntos del último barrido
         self.scan_points = LivePoints(pl, pv, color=CYAN, point_size=3, opacity=0.9, ambient=1.0)
@@ -375,29 +524,49 @@ class BrainViewer:
                                   light_type="camera light"))
         pl.enable_ssao(radius=0.03, bias=0.002, kernel_size=64)  # sombras de contacto entre piezas
 
-        # Historia de los últimos segundos (compacta, abajo a la derecha)
-        self.history, lines = history_chart(
-            pv, "Últimos segundos", (("vx", "#ffffff", "avance"), ("giro", GREEN, "giro"),
-                                     ("P9", CYAN, "P9"), ("GF", RED, "Giant Fiber")),
-            (-1.1, 1.1), loc=(0.55, 0.03), size=(0.43, 0.26))
-        self.hist_lines = dict(lines)
-        pl.add_chart(self.history)
-
-        pl.add_text("SPOT MICRO  /  CEREBRO DE MOSCA", position=(20, H - 50), font_size=18, color=YELLOW)
-        pl.add_text(f"Conectoma FlyWire · 138.639 neuronas · {self.backend}  ·  cueva simulada con LiDAR",
-                    position=(22, H - 78), font_size=10, color=GREY)
-        pl.add_text("t terreno · espacio obstáculo · r reiniciar", position=(22, 14), font_size=9, color=GREY)
-        self.state_text = pl.add_text(" ", position=(22, 100), font_size=12, color=GREEN)
-        # Botón: terreno escarpado
+        cave_name = (f"Grotte de la Sourde ×{w.cave.scale:g} · galería de mina"
+                     if self.real else "cueva generada")
+        pl.add_text(f"SPOT MICRO  ·  {cave_name}", position=(20, H - 40), font_size=12, color=YELLOW)
+        self.state_text = pl.add_text(" ", position=(22, 128), font_size=13, color=GREEN)
+        # Botón: detener el escaneo y generar la cueva completa para explorarla
+        self.stop_button = pl.add_checkbox_button_widget(  # posición relativa al panel, como el texto
+            lambda on: self.stop_scan(on), value=False, position=(22, 82), size=30, border_size=2,
+            color_on=GAS_GREEN, color_off="#2a3646", background_color="#8fa5be")
+        pl.add_text("Detener escaneo y crear la cueva 3D", position=(62, 88), font_size=11, color="w")
         self.rough_button = pl.add_checkbox_button_widget(
             lambda on: self.set_rough(on), value=False, position=(22, 44), size=30, border_size=2,
             color_on=YELLOW, color_off="#2a3646", background_color="#8fa5be")
         pl.add_text("Terreno escarpado", position=(62, 50), font_size=11, color="w")
+        pl.add_text("1-3 pestañas · t terreno · espacio obstáculo · r reiniciar", position=(22, 14), font_size=9, color=GREY)
+        if self.real:
+            pl.add_text(w.cave.attribution, position="upper_right", font_size=7, color=GREY)
 
-    # ----- panel 2: el cerebro -----
+    def _add_miner(self, pv, pl, w, s=6.0):
+        """Un minero de 1,75 m junto a la pared, para ver la escala de la galería."""
+        c, t, r, _ = w.cave.point_at(s)
+        xy = c + np.array([-t[1], t[0]]) * min(0.55, 0.6 * r)
+        z = float(w.ground(*xy))
+        suit = dict(color="#3d5a80", smooth_shading=True, ambient=0.3, specular=0.2)
+        reflective = dict(color="#c8ff3a", ambient=0.6)
+        for side in (-0.1, 0.1):  # piernas
+            leg = xy + np.array([-t[1], t[0]]) * side
+            pl.add_mesh(pv.Cylinder(center=(*leg, z + 0.42), direction=(0, 0, 1), radius=0.075,
+                                    height=0.84), **suit)
+        pl.add_mesh(pv.Cylinder(center=(*xy, z + 1.15), direction=(0, 0, 1), radius=0.19, height=0.62),
+                    **suit)
+        pl.add_mesh(pv.Cylinder(center=(*xy, z + 1.2), direction=(0, 0, 1), radius=0.195, height=0.06),
+                    **reflective)  # banda reflectante
+        pl.add_mesh(pv.Sphere(radius=0.11, center=(*xy, z + 1.58)), color="#d8a07a", smooth_shading=True)
+        pl.add_mesh(pv.Sphere(radius=0.13, center=(*xy, z + 1.63), end_phi=90), color=YELLOW,
+                    smooth_shading=True, specular=0.5)  # casco
+        pl.add_mesh(pv.Sphere(radius=0.025, center=(*(xy + t * 0.12), z + 1.68)), color="white",
+                    ambient=1.0)  # lámpara del casco
+
+    # ----- cerebro -----
     def _build_brain(self):
-        pv, pl, c, H = self.pv, self.pl, self.connectome, self.H
-        pl.subplot(0, 1)
+        pv, pl, c = self.pv, self.pl, self.connectome
+        pl.subplot(*self.BRAIN)
+        h = self._panel_height()
         ann = pd_read_positions(c)
         um = ann * VOXEL_UM
         self.brain_center = np.array([um[:, 0].mean(), um[:, 2].mean(), -um[:, 1].mean()])
@@ -419,70 +588,54 @@ class BrainViewer:
             pl.add_mesh(mesh, scalars="rgb", rgb=True, line_width=1.0, opacity=0.55, lighting=False)
 
         groups = {"Giant Fiber": ("DNp01", None), "DNa02 izq": ("DNa02", "left"),
-                  "DNa02 der": ("DNa02", "right"), "P9 (avanzar)": ("DNp09", None),
-                  "MDN (atrás)": ("MDN", None), "LC10 izq": ("LC10a", "left"),
-                  "LC10 der": ("LC10a", "right"), "LPLC2 izq": ("LPLC2", "left"),
-                  "LPLC2 der": ("LPLC2", "right")}
+                  "DNa02 der": ("DNa02", "right"), "P9": ("DNp09", None), "MDN": ("MDN", None),
+                  "LC10 izq": ("LC10a", "left"), "LC10 der": ("LC10a", "right"),
+                  "LPLC2 izq": ("LPLC2", "left"), "LPLC2 der": ("LPLC2", "right")}
         labels, where = [], []
         for name, (t, side) in groups.items():
             idx = c.find(t, side)
             if len(idx):
                 labels.append(name)
                 where.append(pts[idx].mean(axis=0))
-        pl.add_point_labels(np.array(where), labels, font_size=9, text_color="w", point_color=YELLOW,
-                            point_size=5, render_points_as_spheres=True, shape_color="#1b2433",
+        pl.add_point_labels(np.array(where), labels, font_size=8, text_color="w", point_color=YELLOW,
+                            point_size=4, render_points_as_spheres=True, shape_color="#1b2433",
                             shape_opacity=0.65, always_visible=True)
-        title = "CEREBRO  ·  morfología real (FlyWire)" if self.skeletons is not None else "CEREBRO"
-        pl.add_text(title, position=(18, H - 48), font_size=13, color="w")
-        self.n_active_text = pl.add_text(" ", position=(20, H - 74), font_size=10, color=GREY)
+        self.n_active_text = pl.add_text(" ", position=(12, h - 28), font_size=10, color="w")
         if self.skeletons is not None:
             self.active_lines = LiveLines(pl, pv, points=self.skeletons["verts"], scalars="act",
                                           cmap="hot", clim=[-0.25, 1.0], line_width=2.2)
         self.synapse_lines = LiveLines(pl, pv, scalars="signo", cmap=[SYN_INHIBITORY, SYN_EXCITATORY],
                                        clim=[-1, 1], line_width=1.0, opacity=0.4)
-        pl.add_text("brillo: disparando · naranja/azul: sinapsis excit./inhib.", position=(20, int(H * 0.47)),
-                    font_size=8, color=GREY)
-        self.brain_angle = -25.0  # grados; la vista gira despacio alrededor del cerebro
-
-        # Gráficas compactas debajo del cerebro: lo que ve y lo que manda al cuerpo
-        self.in_keys = ["objetivo_izq", "objetivo_der", "delante_izq", "delante_der",
-                        "looming_izq", "looming_der"]
-        self.in_chart, self.in_series = bar_chart(
-            pv, "Ojos: estímulo (Hz)", ["LC10 izq", "LC10 der", "LC9 izq", "LC9 der", "LPLC2 izq", "LPLC2 der"],
-            [GREEN, GREEN, CYAN, CYAN, RED, RED], 160, loc=(0.03, 0.235), size=(0.94, 0.215))
-        self.out_keys = ["P9_izq", "P9_der", "DNa02_izq", "DNa02_der", "MDN", "GF"]
-        self.out_chart, self.out_series = bar_chart(
-            pv, "Descendentes: cerebro -> cuerpo (Hz)",
-            ["P9 izq", "P9 der", "DNa02 izq", "DNa02 der", "MDN atrás", "Giant Fiber"],
-            [CYAN, CYAN, GREEN, GREEN, YELLOW, RED], 300, loc=(0.03, 0.01), size=(0.94, 0.215))
-        pl.add_chart(self.in_chart, self.out_chart)
-        self._place_brain_camera()
+        self._place_brain_camera()  # vista frontal fija; se gira con el ratón si se quiere
 
     def _place_brain_camera(self):
-        """Cerebro entero en la parte de arriba, visto en diagonal desde arriba y girando."""
-        az, el = math.radians(self.brain_angle), math.radians(24)
+        """Cerebro entero en vista frontal."""
+        az, el = 0.0, math.radians(BRAIN_ELEVATION_DEG)
         direction = np.array([math.sin(az) * math.cos(el), -math.cos(az) * math.cos(el), math.sin(el)])
-        focal = np.array([0.0, 0.0, -330.0])  # el cerebro queda arriba, encima de las gráficas
         cam = self.pl.camera
-        cam.focal_point = focal
-        cam.position = focal + 2900.0 * direction
+        cam.focal_point = (0.0, 0.0, -20.0)
+        cam.position = np.array(cam.focal_point) + 1950.0 * direction
         cam.up = (0, 0, 1)
         self.pl.renderer.reset_camera_clipping_range()
 
-    # ----- panel 3: el mapa del LiDAR -----
+    # ----- mapa del LiDAR -----
     def _build_map(self):
-        pv, pl, H = self.pv, self.pl, self.H
-        pl.subplot(0, 2)
+        pv, pl, w = self.pv, self.pl, self.world
+        pl.subplot(*self.MAP)
+        h = self._panel_height()
+        self.map_cut = REAL_MAP_CUT if self.real else MAP_CUT
         pl.set_background(MAP_BG, all_renderers=False)
-        grid = pv.Plane(center=(0, 0, -0.06), i_size=60, j_size=60, i_resolution=120, j_resolution=120)
+        z0 = float(np.percentile(w.ground(w.cave.center[:, 0], w.cave.center[:, 1]), 2)) - 0.1
+        c = w.cave.center.mean(axis=0)
+        grid = pv.Plane(center=(c[0], c[1], z0), i_size=60, j_size=60, i_resolution=120, j_resolution=120)
         pl.add_mesh(grid, style="wireframe", color="#2c3038", line_width=1, lighting=False)
         # Superficie reconstruida (se rehace cada MAP_MESH_PERIOD s) y barrido actual del LiDAR
         dummy = pv.Sphere(radius=0.01)
         dummy.point_data["altura"] = np.zeros(dummy.n_points)
         self.map_surface = dummy
-        self.map_surface_actor = pl.add_mesh(dummy, scalars="altura", cmap=gradient(SCAN_COLORS), clim=[0, MAP_CUT],
-                                             show_scalar_bar=False, smooth_shading=True, ambient=0.25,
-                                             diffuse=0.85, specular=0.15, specular_power=12)
+        self.map_surface_actor = pl.add_mesh(dummy, scalars="altura", cmap=gradient(SCAN_COLORS),
+                                             clim=[0, self.map_cut], show_scalar_bar=False, smooth_shading=True,
+                                             ambient=0.25, diffuse=0.85, specular=0.15, specular_power=12)
         self.map_surface_actor.visibility = False
         self.map_surface_t = -1e9
         self.map_scan = LivePoints(pl, pv, color=CYAN, point_size=3, opacity=0.9, lighting=False)
@@ -494,34 +647,58 @@ class BrainViewer:
         self.map_heat = pl.add_mesh(pv.Sphere(radius=0.13), color=ORANGE, ambient=0.8, opacity=0.85)
         self.map_heat.visibility = False
         self.heat_seen = False
-        pl.add_text("MAPA LiDAR  ·  cueva reconstruida", position=(18, H - 48), font_size=13, color="w")
-        self.map_text = pl.add_text(" ", position=(20, H - 74), font_size=10, color=GREY)
-        pl.add_text("superficie reconstruida (sin techo)  ·  cian: barrido actual  ·  verde: gas  ·  naranja: calor",
-                    position=(20, int(H * 0.47)), font_size=8, color=GREY)
-        self.gas_chart, gas_lines = history_chart(pv, "Gas (ppm)", (("gas", GAS_GREEN, "gas"),), (0, 1000),
-                                                  loc=(0.03, 0.235), size=(0.94, 0.215))
-        self.temp_chart, temp_lines = history_chart(pv, "Temperatura (°C)", (("temp", ORANGE, "temp"),), (15, 100),
-                                                    loc=(0.03, 0.01), size=(0.94, 0.215))
-        self.hist_lines.update(gas_lines)
-        self.hist_lines.update(temp_lines)
+        self.map_text = pl.add_text(" ", position=(12, h - 28), font_size=10, color="w")
+
+    # ----- gráficas: una pantalla cada una -----
+    def _build_charts(self):
+        pv, pl = self.pv, self.pl
+        full = dict(loc=(0.02, 0.03), size=(0.96, 0.94))
+        pl.subplot(*self.EYES)
+        self.in_keys = ["objetivo_izq", "objetivo_der", "delante_izq", "delante_der",
+                        "looming_izq", "looming_der"]
+        chart, self.in_series = bar_chart(
+            pv, "Ojos: estímulo (Hz)", ["LC10 izq", "LC10 der", "LC9 izq", "LC9 der", "LPLC2 izq", "LPLC2 der"],
+            [GREEN, GREEN, CYAN, CYAN, RED, RED], 160, **full)
+        pl.add_chart(chart)
+        pl.subplot(*self.DNS)
+        self.out_keys = ["P9_izq", "P9_der", "DNa02_izq", "DNa02_der", "MDN", "GF"]
+        chart, self.out_series = bar_chart(
+            pv, "Descendentes: del cerebro al cuerpo (Hz)",
+            ["P9 izq", "P9 der", "DNa02 izq", "DNa02 der", "MDN atrás", "Giant Fiber"],
+            [CYAN, CYAN, GREEN, GREEN, YELLOW, RED], 300, **full)
+        pl.add_chart(chart)
+        pl.subplot(*self.HISTORY)
+        chart, lines = history_chart(
+            pv, "Últimos segundos", (("vx", "#ffffff", "avance"), ("giro", GREEN, "giro"),
+                                     ("P9", CYAN, "P9"), ("GF", RED, "Giant Fiber")), (-1.1, 1.1), **full)
+        self.hist_lines.update(lines)
+        pl.add_chart(chart)
+        pl.subplot(*self.SENSORS)
+        gas, lines = history_chart(pv, "Gas (ppm)", (("gas", GAS_GREEN, "gas"),), (0, 1000),
+                                   loc=(0.02, 0.52), size=(0.96, 0.46))
+        self.hist_lines.update(lines)
+        temp, lines = history_chart(pv, "Temperatura (°C)", (("temp", ORANGE, "temp"),), (15, 100),
+                                    loc=(0.02, 0.03), size=(0.96, 0.46))
+        self.hist_lines.update(lines)
+        pl.add_chart(gas, temp)
         self.hist = {k: [] for k in self.hist_lines}
-        pl.add_chart(self.gas_chart, self.temp_chart)
-        # El mapa ocupa la mitad de arriba (las gráficas la de abajo): centro de proyección más arriba
-        pl.camera.SetWindowCenter(0.0, -0.48)
-        # Botón: detener el escaneo y generar la cueva completa para explorarla
-        self.stop_button = pl.add_checkbox_button_widget(  # posición relativa al panel, como el texto
-            lambda on: self.stop_scan(on), value=False, position=(20, int(H * 0.5)), size=30, border_size=2,
-            color_on="#7dff6b", color_off="#2a3646", background_color="#8fa5be")
-        pl.add_text("Detener escaneo y generar la cueva 3D", position=(60, int(H * 0.5) + 6), font_size=11,
-                    color="w")
 
     # ----- control -----
     def set_rough(self, on):
         """Botón / tecla t: terreno escarpado. El suelo, el LiDAR y los pies lo notan a la vez."""
-        self.world.terrain.rough = bool(on)
-        pts = self.floor_mesh.points
-        pts[:, 2] = self.world.ground(pts[:, 0], pts[:, 1])
-        self.floor_mesh.points = pts
+        w = self.world
+        w.terrain.rough = bool(on)
+        if self.real:
+            pts = self.cave_mesh.points
+            z = self.cave_base_z.copy()
+            m = self.cave_floor_mask
+            z[m] += w.terrain.height(pts[m, 0], pts[m, 1])  # el escarpado se suma al suelo real
+            pts[:, 2] = z
+            self.cave_mesh.points = pts
+        else:
+            pts = self.floor_mesh.points
+            pts[:, 2] = w.ground(pts[:, 0], pts[:, 1])
+            self.floor_mesh.points = pts
         if self.rough_button.GetRepresentation().GetState() != int(bool(on)):
             self.rough_button.GetRepresentation().SetState(int(bool(on)))
 
@@ -551,6 +728,8 @@ class BrainViewer:
             self.world.launch_obstacle()
         elif key == "t":
             self.set_rough(not self.world.terrain.rough)
+        elif key in ("1", "2", "3"):
+            self.set_tab(int(key) - 1)
         elif key == "r":
             self.world.reset_robot()
             self.pilot.reset()
@@ -585,9 +764,10 @@ class BrainViewer:
     # ----- dibujo -----
     def draw(self, feet):
         self._draw_robot(feet)
-        self._draw_brain()
-        self._draw_map()
-        self._draw_history()
+        if self.tab == 0:  # solo se dibujan las pantallas visibles (las gráficas acumulan siempre)
+            self._draw_brain()
+            self._draw_map()
+        self._draw_charts()
 
     def _draw_robot(self, feet):
         pl, w = self.pl, self.world
@@ -604,7 +784,7 @@ class BrainViewer:
                     if bones is not None:
                         a.user_matrix = transform(*bones[bone])
 
-        pl.subplot(0, 0)
+        pl.subplot(*self.ROBOT)
         self.obstacle_actor.visibility = w.obstacle is not None
         if w.obstacle is not None:
             self.obstacle_actor.position = (*w.obstacle, float(w.ground(*w.obstacle)))
@@ -619,7 +799,7 @@ class BrainViewer:
         robot = np.r_[w.pose[:2], body[2] - 0.07]
         self.focus += 0.35 * (robot - self.focus)
         pl.camera.focal_point = self.focus
-        pl.camera.position = self.focus + CAMERA_OFFSET
+        pl.camera.position = self.focus + (REAL_CAMERA_OFFSET if self.real else CAMERA_OFFSET)
         pl.camera.up = (0, 0, 1)
         pl.renderer.reset_camera_clipping_range()  # sin esto VTK recorta el robot al moverse
 
@@ -638,24 +818,20 @@ class BrainViewer:
         self.state_text.GetTextProperty().SetColor(*hex_rgb(col))
 
     def _draw_brain(self):
-        self.pl.subplot(0, 1)
+        self.pl.subplot(*self.BRAIN)
         if self.skeletons is not None:
             self._draw_active_neurons()
         self._draw_synapses()
-        self._update_bars(self.in_series, self.in_keys, self.cmd.inputs)
-        self._update_bars(self.out_series, self.out_keys, self.cmd.rates)
         n_active = f"{int((self.activity > 0.3).sum()):,}".replace(",", ".")
-        self.n_active_text.SetInput(f"neuronas activas ahora: {n_active}")
-        self.brain_angle += BRAIN_SPIN_DEG_S * self.last_dt
-        self._place_brain_camera()
+        self.n_active_text.SetInput(f"Cerebro FlyWire  ·  {n_active} activas")
 
     def _draw_map(self):
         pl, w = self.pl, self.world
-        pl.subplot(0, 2)
+        pl.subplot(*self.MAP)
         pts = w.map_points
         if self.t - self.map_surface_t >= MAP_MESH_PERIOD and len(pts):
             self.map_surface_t = self.t
-            surf = reconstruct_surface(self.pv, pts, w.ground, cut=MAP_CUT)
+            surf = reconstruct_surface(self.pv, pts, w.ground, cut=self.map_cut, voxel=w.map_voxel)
             if surf is not None:
                 self.map_surface.copy_from(surf)  # mismo actor: VTK solo sube la malla nueva
                 self.map_surface_actor.visibility = True
@@ -663,20 +839,21 @@ class BrainViewer:
         self.map_scan.update(hits[~np.isnan(hits[:, 0])])
         tr = np.array(w.trail)
         if len(tr) > 1:
-            tr = np.column_stack([tr, np.full(len(tr), 0.05)]).astype(np.float32)
+            tr = np.column_stack([tr, w.ground(tr[:, 0], tr[:, 1]) + 0.05]).astype(np.float32)
             n = len(tr)
             self.map_path.update(np.column_stack([np.arange(n - 1), np.arange(1, n)]), points=tr)
-        self.map_robot.position = (w.pose[0], w.pose[1], 0.2)
+        z = float(w.ground(*w.pose[:2]))
+        self.map_robot.position = (w.pose[0], w.pose[1], z + 0.2)
         self.map_robot.orientation = (0, 0, math.degrees(w.pose[2]))
         if w.gas_found is not None and not self.map_gas.visibility:
-            self.map_gas.position = (*w.gas_found, 0.3)
+            self.map_gas.position = (*w.gas_found, float(w.ground(*w.gas_found)) + 0.3)
             self.map_gas.visibility = True
         if self.readings["temp_c"] > TEMP_AVOID and not self.heat_seen:
             self.heat_seen = True
-            self.map_heat.position = (*w.heat_xy, 0.2)
+            self.map_heat.position = (*w.heat_xy, float(w.ground(*w.heat_xy)) + 0.2)
             self.map_heat.visibility = True
-        self.map_text.SetInput(f"{len(pts):,} vóxeles de 4 cm  ·  recorrido {w.progress:.1f} m".replace(",", "."))
-        robot = np.r_[w.pose[:2], 0.3]
+        self.map_text.SetInput(f"Mapa LiDAR  ·  {len(pts):,} vóxeles  ·  {w.progress:.1f} m".replace(",", "."))
+        robot = np.r_[w.pose[:2], z + 0.3]
         self.map_focus += 0.2 * (robot - self.map_focus)
         pl.camera.focal_point = self.map_focus
         pl.camera.position = self.map_focus + MAP_CAMERA_OFFSET
@@ -706,7 +883,9 @@ class BrainViewer:
             bars.update(pos, [values[key] for key in keys[k:k + len(pos)]])
             k += len(pos)
 
-    def _draw_history(self):
+    def _draw_charts(self):
+        self._update_bars(self.in_series, self.in_keys, self.cmd.inputs)
+        self._update_bars(self.out_series, self.out_keys, self.cmd.rates)
         g, r = self.pilot.gain, self.cmd.rates
         self.t += self.last_dt
         self.hist_t.append(self.t)
@@ -749,7 +928,7 @@ class BrainViewer:
         self.pl.render()
 
     def run(self):
-        for key in ("space", "t", "r"):
+        for key in ("space", "t", "r", "1", "2", "3"):
             self.pl.add_key_event(key, lambda k=key: self.on_key(k))
         self.draw(self.tick(0.04))
         self.pl.add_timer_event(max_steps=10**9, duration=1, callback=self.update)  # sin tope de fps
@@ -757,7 +936,8 @@ class BrainViewer:
 
     def record(self, path, seconds=30.0, fps=24, speed=2.0, rough_at=0.35):
         """Misión grabada con dt fijo (vídeo .mp4 o GIF, sin ventana). speed > 1 acelera la
-        simulación respecto al vídeo; a rough_at (fracción) se activa el terreno escarpado."""
+        simulación respecto al vídeo; a rough_at (fracción) se activa el terreno escarpado. Las
+        pestañas se recorren: la mitad del vídeo la 1 y un cuarto cada una de las otras."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.suffix == ".gif":
@@ -768,6 +948,9 @@ class BrainViewer:
         for i in range(n):
             if i == int(rough_at * n):
                 self.set_rough(True)
+            tab = 0 if i < n / 2 else 1 if i < 3 * n / 4 else 2
+            if tab != self.tab:
+                self.set_tab(tab)
             for _ in range(int(round(speed))):
                 feet = self.tick(1.0 / fps)
             self.draw(feet)
@@ -822,8 +1005,9 @@ def main():
     ap.add_argument("--record", help="guardar un vídeo (.mp4) o GIF en esta ruta en vez de abrir la ventana")
     ap.add_argument("--seconds", type=float, default=30.0, help="duración del vídeo")
     ap.add_argument("--speed", type=float, default=2.0, help="pasos de simulación por fotograma del vídeo")
+    ap.add_argument("--cueva", choices=["real", "generada"], default="real")
     args = ap.parse_args()
-    viewer = BrainViewer(args.device, off_screen=bool(args.record))
+    viewer = BrainViewer(args.device, off_screen=bool(args.record), cave=args.cueva)
     if args.record:
         n = viewer.record(args.record, args.seconds, speed=args.speed)
         print(f"Vídeo: {args.record} ({n} fotogramas)")

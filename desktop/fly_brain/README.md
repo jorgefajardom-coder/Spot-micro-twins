@@ -44,17 +44,31 @@ python ..\spot_brain.py --record spot.mp4  # grabarlo en vídeo
 
 ![El Spot persiguiendo un objetivo y huyendo de un obstáculo](../../docs/assets/spot_brain.gif)
 
-A la izquierda el robot (el CAD completo, 699.000 caras); a la derecha el cerebro
-con la morfología real de cada neurona de FlyWire, en colores como sus
-renderizaciones. Cada neurona que dispara se ilumina entera, y de ella salen
-líneas hacia sus dianas más fuertes del conectoma (naranja excitatoria, azul
-inhibitoria). Debajo, los estímulos visuales, las descendentes y los últimos
-segundos de avance, giro y Giant Fiber. Render con PyVista/VTK (OpenGL con
-z-buffer, FXAA y oclusión ambiental).
+A la izquierda, grande, el robot (el CAD completo, 699.000 caras) en la cueva. A
+la derecha, dos pantallas a la vez en tres pestañas (botones o teclas `1`-`3`):
+**Cerebro · Mapa LiDAR**, **Ojos · Descendentes** e **Historia · Sensores**.
+
+El cerebro tiene la morfología real de cada neurona de FlyWire, en vista frontal
+fija (se gira con el ratón): cada neurona que dispara se ilumina entera, y de ella
+salen líneas hacia sus dianas más fuertes del conectoma (naranja excitatoria, azul
+inhibitoria). Las demás pantallas muestran el mapa LiDAR, los estímulos visuales,
+las descendentes, los últimos segundos de avance, giro y Giant Fiber, y los
+sensores de gas y temperatura. Render con PyVista/VTK (OpenGL con z-buffer, FXAA y
+oclusión ambiental).
 
 ## Misión en la cueva: gas, calor, terreno y LiDAR
 
-`../sim_world.py` simula una galería de 16 m (sin gráficos, con tests):
+`../sim_world.py` simula la cueva (sin gráficos, con tests). Por defecto es una
+**cueva real**: la galería de entrada de la Grotte de la Sourde, escaneada con
+LiDAR (KarstConduitCatalogue, Racine et al. 2025, ERC Karst,
+[doi:10.60544/7rk6-rn14](https://doi.org/10.60544/7rk6-rn14), CC BY-NC 4.0),
+a escala 2:1: una **galería de mina por la que pasan personas** (~2,7 m de alto y
+1,2-1,8 m de ancho; un minero de 1,75 m de referencia), con la fuga a 14 m de la
+entrada. `../caves/real_cave.py` descarga la nube de
+puntos (Potree) la primera vez; de sus normales salen el suelo y el techo, la
+zona transitable y la ruta por el centro de la galería. Las paredes se pintan con
+la luminosidad del escáner sobre un tono de caliza, sedimento en el suelo y grano
+de roca. Con `--cueva generada` se usa la galería sintética de 16 m.
 
 - **Fuga de gas** al fondo: el gas se difunde a lo largo de la galería. Dos
   "antenas" virtuales miden el gradiente; el robot lo sigue hasta la fuga y se
@@ -68,8 +82,9 @@ z-buffer, FXAA y oclusión ambiental).
   se acumula en un mapa de vóxeles de 5 cm, que el tercer panel dibuja sin techo
   para ver la forma de la galería.
 
-En la prueba sin gráficos el cerebro completo encuentra la fuga en ~52 s, en
-terreno plano y escarpado, sin chocar y sin fallos de IK.
+En la prueba sin gráficos el cerebro completo encuentra la fuga en ~52 s en la
+cueva generada y en ~50 s en la galería de mina, en terreno plano y escarpado, sin
+chocar.
 
 La roca es rugosa (ruido 3D que escala la sección de la galería; el LiDAR y la
 malla usan exactamente la misma deformación). El mapa no es una nube de puntos:

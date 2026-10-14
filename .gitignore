@@ -28,3 +28,7 @@ desktop/scans/
 *.stl
 *.step
 *.stp
+
+# Cuevas reales descargadas (caves/real_cave.py las baja; licencias de sus autores)
+desktop/caves/karst/
+desktop/caves/Mescla.*
