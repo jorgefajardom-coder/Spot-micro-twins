@@ -24,7 +24,7 @@ UPPER = 0.3385 * SCALE                    # m, hombro -> codo
 FORE = np.array([0.4033 * SCALE, 0.0, 0.026])  # m, codo -> muñeca (el tramo negro sube un poco)
 WRIST = 0.11745 * SCALE                   # m, muñeca -> cabeza
 GRIPPER = 0.12482 * SCALE                 # m, largo de la pinza
-MOUNT = np.array([0.005, 0.0, 0.0388])    # m, centro del bloque central (la parte más gruesa), sobre sus dos nervios
+MOUNT = np.array([0.028, 0.0, 0.0388])    # m, sobre el nervio delantero del bloque central (la parte más gruesa)
 SHOULDER_UP = 0.048                       # m, eje del hombro sobre la base
 # Postura de las fotos: brazo casi vertical, antebrazo hacia delante y abajo, cabeza nivelada
 POSE = {"yaw": 0.0, "shoulder": 74.0, "elbow": -112.0, "wrist": 38.0}  # grados
