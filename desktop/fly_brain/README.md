@@ -1,5 +1,8 @@
 # Spot Micro con cerebro de mosca
 
+> **Versión 2** del README. La versión anterior sigue disponible en
+> [README_v1.md](README_v1.md).
+
 El Spot Micro explora una cueva real manejado por el **cerebro completo de una
 mosca** (*Drosophila*, conectoma FlyWire v783: 138.639 neuronas y 15 millones de
 conexiones) simulado en la GPU. Busca una fuga de gas, rodea las fuentes de
