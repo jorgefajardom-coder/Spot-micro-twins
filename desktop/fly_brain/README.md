@@ -66,7 +66,8 @@ El Spot lleva un brazo al estilo del Spot Arm de Boston Dynamics, con sus
 proporciones (brazo 338,5 mm, antebrazo 403,3, muñeca 117,45, pinza 124,82)
 escaladas ×0,28 al Spot Micro (`../spot_arm.py`): base negra que gira, hombro,
 brazo amarillo, codo con su tramo negro doblado, antebrazo, muñeca y una cabeza con
-pinza y cámara. El LiDAR va encima de la cabeza (~0,37 m sobre el suelo) y la
+pinza alargada en pico y cámara, con los mismos colores y material que el cuerpo. El
+LiDAR va encima de la cabeza (~0,33 m sobre el suelo) y la
 cabeza **mira alrededor**: la base barre ±65° cada 9 s y la muñeca la mantiene
 nivelada con un leve cabeceo; el LiDAR escanea desde donde está la cabeza en cada
 momento.

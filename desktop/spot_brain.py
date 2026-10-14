@@ -34,7 +34,7 @@ from scipy.spatial import cKDTree
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "fly_brain"))
 
-from cave_explorer import (MAP_BG, SCAN_COLORS, Explorer, build_cave_model, gradient,  # noqa: E402
+from cave_explorer import (MAP_BG, SCAN_COLORS, Explorer, build_cave_model, gradient, reconstruct_arrays,  # noqa: E402
                            reconstruct_surface, save_model)
 from gait import BODY_HEIGHT, GaitManager  # noqa: E402
 from kinematics import Kinematics  # noqa: E402
@@ -67,7 +67,7 @@ NEURON_PALETTE = ["#ff4fd8", "#b45cff", "#7a5cff", "#4f7dff", "#3db8ff", "#29e3d
 ACTIVE_THRESHOLD = 0.12                        # actividad a partir de la que una neurona brilla
 MAX_ACTIVE_DRAWN = 600                         # neuronas activas candidatas (las más activas)
 CAMERA_OFFSET = np.array([-1.0, -1.3, 0.95])    # cámara del robot respecto a él (~1,9 m)
-REAL_CAMERA_OFFSET = np.array([-2.1, -2.6, 1.0])   # en la galería de mina, más lejos y bajo (~3,5 m)
+REAL_CAMERA_OFFSET = np.array([-0.85, -1.05, 0.55])  # en la galería de mina, cerca (~1,5 m)
 MAP_CAMERA_OFFSET = np.array([-3.4, -4.4, 5.6])  # cámara del mapa: desde arriba, siguiendo al robot
 MAP_CUT = 0.5                                     # m: el mapa enseña solo lo de debajo (sin el techo)
 REAL_MAP_CUT = 1.2                                # m: lo mismo en la galería de mina
@@ -552,8 +552,9 @@ class BrainViewer:
         if spot_arm.available():
             self.arm = spot_arm.SpotArm(pv)
             for link, parts in self.arm.parts.items():
-                self.arm_actors[link] = [pl.add_mesh(m, color=col, smooth_shading=True, ambient=0.25,
-                                                     diffuse=0.8, specular=0.35, specular_power=25)
+                # El mismo plástico que el cuerpo: color plano y el mismo material
+                self.arm_actors[link] = [pl.add_mesh(m, color=col, **{k: v for k, v in style.items()
+                                                                      if k not in ("scalars", "rgb")})
                                          for m, col in parts]
             self._aim_lidar(0.0)
         self.leg_actors = [{bone: [pl.add_mesh(mesh(p), **style) for p in model.legs[leg][bone]]
@@ -571,8 +572,14 @@ class BrainViewer:
             self.cave_seen = np.full(self.cave_mesh.n_points, -np.inf, np.float32)
             self.cave_mesh.point_data["rgb"][:] = UNSEEN_RGB
             # El suelo no se descubre: está desde el principio y no cambia mientras el Spot avanza
-            low = self.cave_mesh.point_data["h"] < 0.15
+            low = self.cave_mesh.point_data["h"] < 0.25
             self.cave_seen[low] = -1e6
+            # Y queda por debajo del suelo con textura: si coinciden en altura se pelean por
+            # dibujarse y salen manchas que parpadean al mover la cámara
+            pts = self.cave_mesh.points
+            under = w.cave.floor(pts[low, 0], pts[low, 1]) - 0.06
+            pts[low, 2] = np.minimum(pts[low, 2], under)
+            self.cave_mesh.points = pts
             self.cave_mesh.point_data["rgb"][low] = self.cave_rgb[low].astype(np.uint8)
             real = pl.add_mesh(self.cave_mesh, scalars="rgb", rgb=True, smooth_shading=True, ambient=0.3,
                                diffuse=0.8, specular=0.08)
@@ -712,6 +719,7 @@ class BrainViewer:
                                              ambient=0.25, diffuse=0.85, specular=0.15, specular_power=12)
         self.map_surface_actor.visibility = False
         self.map_surface_t = -1e9
+        self.map_job, self.map_pool = None, None
         self.map_scan = LivePoints(pl, pv, color=CYAN, point_size=3, opacity=0.9, lighting=False)
         self.map_path = LiveLines(pl, pv, color=YELLOW, line_width=3)
         self.map_robot = pl.add_mesh(pv.Cone(center=(0, 0, 0), direction=(1, 0, 0), height=0.3, radius=0.11),
@@ -933,12 +941,23 @@ class BrainViewer:
         pl, w = self.pl, self.world
         pl.subplot(*self.MAP)
         pts = w.map_points
-        if self.t - self.map_surface_t >= MAP_MESH_PERIOD and len(pts):
-            self.map_surface_t = self.t
-            surf = reconstruct_surface(self.pv, pts, w.ground, cut=self.map_cut, voxel=w.map_voxel)
-            if surf is not None:
+        # La superficie se rehace en otro proceso: reconstruirla aquí congelaba el fotograma
+        # ~70 ms cada MAP_MESH_PERIOD y el robot daba un salto al recuperar el tiempo
+        job = self.map_job
+        if job is not None and job.done():
+            self.map_job = None
+            result = job.result()
+            if result is not None:
+                verts, faces, height, normals = result
+                surf = self.pv.PolyData(verts, faces)
+                surf.point_data["altura"] = height
+                surf.point_data["Normals"] = normals
                 self.map_surface.copy_from(surf)  # mismo actor: VTK solo sube la malla nueva
                 self.map_surface_actor.visibility = True
+        if self.map_job is None and self.t - self.map_surface_t >= MAP_MESH_PERIOD and len(pts) >= 200:
+            self.map_surface_t = self.t
+            self.map_job = self._map_pool().submit(reconstruct_arrays, pts.copy(), *self._ground_grid(pts),
+                                                   self.map_cut, w.map_voxel)
         hits, _ = w.last_scan
         self.map_scan.update(hits[~np.isnan(hits[:, 0])])
         tr = np.array(w.trail)
@@ -963,6 +982,19 @@ class BrainViewer:
         pl.camera.position = self.map_focus + MAP_CAMERA_OFFSET
         pl.camera.up = (0, 0, 1)
         pl.renderer.reset_camera_clipping_range()
+
+    def _map_pool(self):
+        if self.map_pool is None:
+            from concurrent.futures import ProcessPoolExecutor
+            self.map_pool = ProcessPoolExecutor(max_workers=1)
+        return self.map_pool
+
+    def _ground_grid(self, pts, cell=0.1):
+        """Altura del suelo muestreada bajo los puntos del mapa, para enviarla al otro proceso."""
+        lo = pts[:, :2].min(0) - 0.5
+        n = np.ceil((pts[:, :2].max(0) + 0.5 - lo) / cell).astype(int) + 1
+        x, y = np.meshgrid(lo[0] + cell * np.arange(n[0]), lo[1] + cell * np.arange(n[1]), indexing="ij")
+        return self.world.ground(x + cell / 2, y + cell / 2), lo, cell
 
     def _draw_active_neurons(self):
         """Las neuronas activas se dibujan encima con toda su morfología, brillando."""
@@ -1042,8 +1074,10 @@ class BrainViewer:
         self.draw(self.tick(0.04))
         self.pl.add_timer_event(max_steps=10**9, duration=1, callback=self.update)  # sin tope de fps
         self.pl.show()
+        if self.map_pool is not None:
+            self.map_pool.shutdown(wait=False, cancel_futures=True)
 
-    def record(self, path, seconds=30.0, fps=24, speed=2.0, rough_at=0.35):
+    def record(self, path, seconds=30.0, fps=24, speed=2.0, rough_at=None):
         """Misión grabada con dt fijo (vídeo .mp4 o GIF, sin ventana). speed > 1 acelera la
         simulación respecto al vídeo; a rough_at (fracción) se activa el terreno escarpado. Las
         pestañas se recorren: la mitad del vídeo la 1 y un cuarto cada una de las otras."""
@@ -1055,7 +1089,7 @@ class BrainViewer:
             self.pl.open_movie(str(path), framerate=fps, quality=8)
         n = int(seconds * fps)
         for i in range(n):
-            if i == int(rough_at * n):
+            if rough_at is not None and i == int(rough_at * n):
                 self.set_rough(True)
             tab = 0 if i < n / 2 else 1 if i < 3 * n / 4 else 2
             if tab != self.tab:
@@ -1065,6 +1099,8 @@ class BrainViewer:
             self.draw(feet)
             self.pl.write_frame()
         self.pl.close()
+        if self.map_pool is not None:
+            self.map_pool.shutdown(wait=False, cancel_futures=True)
         mesh, meta = build_cave_model(self.world)
         if mesh is not None:
             self.saved_model = save_model(mesh, meta)

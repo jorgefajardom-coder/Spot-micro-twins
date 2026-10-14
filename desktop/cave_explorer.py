@@ -76,6 +76,23 @@ def reconstruct_surface(pv, points, ground, cut=None, voxel=0.04, sigma=1.25, le
     return surf
 
 
+def reconstruct_arrays(points, ground_grid, ground_lo, ground_cell, cut, voxel):
+    """reconstruct_surface para otro proceso: el suelo llega muestreado en una rejilla y la
+    malla vuelve como arrays (vértices, caras y altura), que se pueden enviar entre procesos."""
+    import pyvista as pv
+
+    def ground(x, y):
+        i = np.clip(((np.asarray(x) - ground_lo[0]) / ground_cell).astype(int), 0, ground_grid.shape[0] - 1)
+        j = np.clip(((np.asarray(y) - ground_lo[1]) / ground_cell).astype(int), 0, ground_grid.shape[1] - 1)
+        return ground_grid[i, j]
+
+    surf = reconstruct_surface(pv, points, ground, cut=cut, voxel=voxel)
+    if surf is None:
+        return None
+    return (np.asarray(surf.points, np.float32), np.asarray(surf.faces), np.asarray(surf.point_data["altura"]),
+            np.asarray(surf.point_data["Normals"], np.float32))
+
+
 def integrate_sensors(mesh, samples, radius=INTERP_RADIUS, k=12):
     """Gas y temperatura en cada vértice: media ponderada (1/d²) de las mediciones cercanas."""
     from scipy.spatial import cKDTree
