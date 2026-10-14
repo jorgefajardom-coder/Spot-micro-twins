@@ -67,7 +67,7 @@ NEURON_PALETTE = ["#ff4fd8", "#b45cff", "#7a5cff", "#4f7dff", "#3db8ff", "#29e3d
 ACTIVE_THRESHOLD = 0.12                        # actividad a partir de la que una neurona brilla
 MAX_ACTIVE_DRAWN = 600                         # neuronas activas candidatas (las más activas)
 CAMERA_OFFSET = np.array([-1.0, -1.3, 0.95])    # cámara del robot respecto a él (~1,9 m)
-REAL_CAMERA_OFFSET = np.array([-0.85, -1.05, 0.55])  # en la galería de mina, cerca (~1,5 m)
+REAL_CAMERA_OFFSET = np.array([-1.1, -1.36, 0.68])   # en la galería de mina (~1,9 m)
 MAP_CAMERA_OFFSET = np.array([-3.4, -4.4, 5.6])  # cámara del mapa: desde arriba, siguiendo al robot
 MAP_CUT = 0.5                                     # m: el mapa enseña solo lo de debajo (sin el techo)
 REAL_MAP_CUT = 1.2                                # m: lo mismo en la galería de mina
@@ -100,13 +100,39 @@ def part_mesh(pv, v, f, c, smooth=False):
     faces = np.hstack([np.full((len(f), 1), 3), f]).astype(np.int64).ravel()
     mesh = pv.PolyData(np.asarray(v, float), faces)
     mesh.cell_data["rgb"] = (np.asarray(c) * 255).astype(np.uint8)
+    # El STL trae cada triángulo con sus propios vértices: sin unirlos, las normales no se
+    # promedian entre vecinos y cada triángulo se ve como una faceta
+    mesh = mesh.clean(tolerance=1e-6)
     if smooth:
         # El modelo ligero (agrupación de vértices) tiene escalones: Taubin los alisa sin encoger
-        mesh = mesh.clean(tolerance=1e-6).smooth_taubin(n_iter=30, pass_band=0.08,
-                                                        boundary_smoothing=False, feature_smoothing=False)
+        mesh = mesh.smooth_taubin(n_iter=30, pass_band=0.08, boundary_smoothing=False, feature_smoothing=False)
     # El STL tiene caras con orientación mixta: consistent_normals las arregla
-    return mesh.compute_normals(cell_normals=False, split_vertices=True, feature_angle=50,
-                                consistent_normals=True, auto_orient_normals=False)
+    mesh = mesh.compute_normals(cell_normals=False, split_vertices=False, consistent_normals=True,
+                                auto_orient_normals=False)
+    return smooth_normals(mesh)
+
+
+def smooth_normals(mesh, feature_angle=30.0):
+    """Normales por vértice ponderadas por el ángulo de cada triángulo en ese vértice.
+
+    El CAD tiene triángulos muy largos y finos: con la media simple de VTK, los finos de los
+    redondeos tiraban de la normal de las caras planas y se veían bandas en forma de triángulo.
+    Los vértices se separan en las aristas vivas (más de feature_angle entre caras).
+    """
+    m = mesh.compute_normals(cell_normals=False, split_vertices=True, feature_angle=feature_angle,
+                             consistent_normals=False, auto_orient_normals=False)
+    f = m.faces.reshape(-1, 4)[:, 1:]
+    p = m.points
+    fn = np.cross(p[f[:, 1]] - p[f[:, 0]], p[f[:, 2]] - p[f[:, 0]])
+    fn /= np.linalg.norm(fn, axis=1, keepdims=True) + 1e-12
+    acc = np.zeros_like(p)
+    for k in range(3):
+        u = p[f[:, (k + 1) % 3]] - p[f[:, k]]
+        w = p[f[:, (k + 2) % 3]] - p[f[:, k]]
+        cos = np.einsum("ij,ij->i", u, w) / (np.linalg.norm(u, axis=1) * np.linalg.norm(w, axis=1) + 1e-12)
+        np.add.at(acc, f[:, k], fn * np.arccos(np.clip(cos, -1, 1))[:, None])
+    m.point_data["Normals"] = acc / (np.linalg.norm(acc, axis=1, keepdims=True) + 1e-12)
+    return m
 
 
 class LiveLines:
