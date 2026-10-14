@@ -1,0 +1,3 @@
+# Solo necesario para reconstruir spot_model.npz desde el STL original.
+numpy>=1.24
+fast-simplification==0.1.12

@@ -31,9 +31,8 @@ CAD_BODY_CENTER = np.array([150.6, 150.15])  # centro del cuerpo en (x, y) del C
 CAD_FLOOR_Z = 236.3                          # z del punto más bajo de los pies
 
 # Presupuesto de caras (matplotlib dibuja fluido hasta ~6-8k caras por robot)
-FACES_BODY = 2600
-FACES_BONE = {"shoulder": 260, "upper": 420, "lower": 460}
-MIN_PART_SIZE = 0.006  # m: descarta tornillería y piezas diminutas
+FACES_BODY = 6000
+FACES_BONE = {"shoulder": 800, "upper": 1400, "lower": 1200}
 
 
 def load_colored_stl(path):
@@ -101,30 +100,24 @@ def seg_dist(p, a, b):
 
 
 def simplify_colored(v, f, cols, max_faces):
-    """Vertex clustering conservando el color de cada cara."""
+    """Reducir una pieza aislada por error cuadrático; conservar sus materiales."""
     if len(f) <= max_faces:
         return v, f, cols
-    size = np.ptp(v, axis=0).max()
-    lo, hi = size / 2000, size / 6
-    best = None
-    for _ in range(22):
-        cell = (lo + hi) / 2
-        keys = np.floor((v - v.min(0)) / cell).astype(np.int64)
-        _, cl, cnt = np.unique(keys, axis=0, return_inverse=True, return_counts=True)
-        cl = cl.ravel()
-        nv = np.zeros((cnt.size, 3))
-        np.add.at(nv, cl, v)
-        nv /= cnt[:, None]
-        nf = cl[f]
-        keep = (nf[:, 0] != nf[:, 1]) & (nf[:, 1] != nf[:, 2]) & (nf[:, 0] != nf[:, 2])
-        nf, nc = nf[keep], cols[keep]
-        _, idx = np.unique(np.sort(nf, axis=1), axis=0, return_index=True)
-        nf, nc = nf[idx], nc[idx]
-        if len(nf) > max_faces:
-            lo = cell
-        else:
-            hi, best = cell, (nv, nf, nc)
-    return best if best is not None else (v, f, cols)
+    import fast_simplification
+    nv, nf = fast_simplification.simplify(v, f, target_count=max_faces, agg=5)
+    if not len(nf):
+        return v, f, cols
+    if np.all(cols == cols[0]):
+        nc = np.tile(cols[0], (len(nf), 1))
+    else:
+        source_centers = v[f].mean(axis=1)
+        target_centers = nv[nf].mean(axis=1)
+        nearest = []
+        for start in range(0, len(nf), 64):
+            delta = target_centers[start:start + 64, None, :] - source_centers[None, :, :]
+            nearest.extend(np.einsum('ijk,ijk->ij', delta, delta).argmin(axis=1))
+        nc = cols[np.asarray(nearest)]
+    return nv, nf, nc
 
 
 def pack(tris_local, cols, max_faces):
@@ -167,14 +160,10 @@ def main(stl_path):
             groups[f"{leg}_{bone}"] = []
 
     half_w = kin.width / 2 + 0.004
-    dropped = 0
     for c in ids:
         sel = np.where(comp == c)[0]
         v = tris[sel].reshape(-1, 3)
         lo, hi = v.min(0), v.max(0)
-        if (hi - lo).max() < MIN_PART_SIZE:
-            dropped += len(sel)
-            continue
         ctr = (lo + hi) / 2
         if abs(ctr[1]) < half_w + 0.004 and ctr[2] > 0.12:
             groups["body"].append(sel)
@@ -192,7 +181,6 @@ def main(stl_path):
     for key, sels in groups.items():
         if not sels:
             continue
-        sel = np.concatenate(sels)
         if key == "body":
             r, p = skel["body"]
             budget = FACES_BODY
@@ -200,11 +188,20 @@ def main(stl_path):
             leg, bone = key.split("_")
             r, p = skel["legs"][int(leg)][bone]
             budget = FACES_BONE[bone]
-        local = (tris[sel] - p) @ r  # mundo -> local del hueso
-        v, f, c = pack(local, cols[sel], budget)
+        # Cada sólido se reduce por separado: nunca fusionar carcasas o tornillos
+        # vecinos, ni eliminar piezas pequeñas por tamaño.
+        weights = np.sqrt([len(sel) for sel in sels])
+        vs, fs, cs, offset = [], [], [], 0
+        for sel, weight in zip(sels, weights):
+            local = (tris[sel] - p) @ r
+            target = max(24, int(budget * weight / weights.sum()))
+            v, f, c = pack(local, cols[sel], target)
+            vs.append(v); fs.append(f + offset); cs.append(c)
+            offset += len(v)
+        v, f, c = np.concatenate(vs), np.concatenate(fs), np.concatenate(cs)
         out[f"{key}_v"], out[f"{key}_f"], out[f"{key}_c"] = v, f, c
-        print(f"  {key:12s} {len(sel):7d} -> {len(f):5d} caras")
-    print(f"  descartadas {dropped} caras de piezas < {MIN_PART_SIZE * 1000:.0f} mm")
+        print(f"  {key:12s} {sum(map(len, sels)):7d} -> {len(f):5d} caras ({len(sels)} piezas)")
+    print(f"  conservadas {len(ids)} piezas del STL")
     np.savez_compressed(OUT, **out)
     print("Guardado", OUT, f"({os.path.getsize(OUT) / 1024:.0f} KB)")
 
