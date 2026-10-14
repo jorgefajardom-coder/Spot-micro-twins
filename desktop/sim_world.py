@@ -18,6 +18,7 @@ from scipy.spatial import cKDTree
 GRID_CELL = 0.04            # m, rejilla de la cueva para el LiDAR
 LIDAR_RANGE = 6.0           # m
 LIDAR_STEP = 0.02           # m por paso del trazado de rayos
+FOOT_SOLE = 0.017           # m, del punto del pie (cinemática) a la suela del modelo
 LIDAR_HEIGHT = 0.10         # m por encima del centro del cuerpo
 LIDAR_AZIMUTHS = 96         # rayos por vuelta
 LIDAR_ELEVATIONS = np.radians([-84, -72, -60, -48, -36, -26, -16, -8, 0, 8, 16, 26, 36, 48, 60, 72, 84, 90])  # barrido vertical completo: suelo, paredes y techo
@@ -313,10 +314,16 @@ class RealCave:
         return self.center[i], self.tangent[i], self.radius[i], self.ceiling[i]
 
     def floor(self, x, y):
+        """Altura del suelo, interpolada entre celdas (continua: los pies y el suelo dibujado
+        coinciden; con la celda más cercana había escalones de hasta varios cm)."""
         x, y = np.asarray(x, float), np.asarray(y, float)
-        i = np.clip(((x - self.lo[0]) / self.CELL).astype(int), 0, self.floor_grid.shape[0] - 1)
-        j = np.clip(((y - self.lo[1]) / self.CELL).astype(int), 0, self.floor_grid.shape[1] - 1)
-        return self.floor_grid[i, j]
+        g = self.floor_grid
+        u = np.clip((x - self.lo[0]) / self.CELL - 0.5, 0, g.shape[0] - 1.001)
+        v = np.clip((y - self.lo[1]) / self.CELL - 0.5, 0, g.shape[1] - 1.001)
+        i, j = u.astype(int), v.astype(int)
+        fu, fv = u - i, v - j
+        return ((g[i, j] * (1 - fu) + g[i + 1, j] * fu) * (1 - fv)
+                + (g[i, j + 1] * (1 - fu) + g[i + 1, j + 1] * fu) * fv)
 
     def wall_limit(self, i):
         """Distancia máxima del cuerpo a la ruta (la zona transitable menos el cuerpo)."""
@@ -529,7 +536,8 @@ class CaveWorld:
         feet_world: 4x3 con z relativa al suelo (0 = apoyado). Devuelve (pies, rpy en grados, cuerpo)."""
         feet = np.array(feet_world, float)
         ground = self.ground(feet[:, 0], feet[:, 1])
-        feet[:, 2] += ground
+        # El punto del pie es el centro de la pieza redondeada: la suela queda FOOT_SOLE más abajo
+        feet[:, 2] += ground + FOOT_SOLE
         # Orden de patas: LF, LB, RB, RF
         length = np.linalg.norm(feet[0, :2] - feet[1, :2]) or 0.2
         width = np.linalg.norm(feet[0, :2] - feet[3, :2]) or 0.16
@@ -537,6 +545,6 @@ class CaveWorld:
         left, right = (ground[0] + ground[1]) / 2, (ground[2] + ground[3]) / 2
         pitch = -math.degrees(math.atan2(front - back, length))
         roll = math.degrees(math.atan2(left - right, width))
-        body = np.array([self.pose[0], self.pose[1], body_height + ground.mean()])
+        body = np.array([self.pose[0], self.pose[1], body_height + ground.mean() + FOOT_SOLE])
         return feet, [float(np.clip(roll, -15, 15)), float(np.clip(pitch, -15, 15)),
                       math.degrees(self.pose[2])], body

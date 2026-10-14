@@ -10,7 +10,7 @@ import unittest
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from sim_world import (GAS_FOUND, LIDAR_ELEVATIONS, MAP_VOXEL, TEMP_AMBIENT, WALL_ROUGH, CaveWorld,
+from sim_world import (FOOT_SOLE, GAS_FOUND, LIDAR_ELEVATIONS, MAP_VOXEL, TEMP_AMBIENT, WALL_ROUGH, CaveWorld,
                        RealCave, _free)
 
 
@@ -104,14 +104,14 @@ class Terrain(unittest.TestCase):
         feet = np.array([[0.1, 0.08, 0], [-0.1, 0.08, 0], [-0.1, -0.08, 0], [0.1, -0.08, 0]]) + [*w.pose[:2], 0]
         f, rpy, body = w.body_on_terrain(feet, 0.19)
         self.assertEqual(rpy[:2], [0.0, 0.0])
-        self.assertAlmostEqual(body[2], 0.19)
+        self.assertAlmostEqual(body[2], 0.19 + FOOT_SOLE)  # la suela apoya en el suelo
 
     def test_rough_terrain_puts_feet_on_the_ground(self):
         w = CaveWorld()
         w.terrain.rough = True
         feet = np.array([[0.1, 0.08, 0], [-0.1, 0.08, 0], [-0.1, -0.08, 0], [0.1, -0.08, 0]]) + [*w.pose[:2], 0]
         f, rpy, _ = w.body_on_terrain(feet, 0.19)
-        np.testing.assert_allclose(f[:, 2], w.ground(f[:, 0], f[:, 1]))
+        np.testing.assert_allclose(f[:, 2], w.ground(f[:, 0], f[:, 1]) + FOOT_SOLE)  # suela en el suelo
         self.assertGreater(np.ptp(f[:, 2]), 0.005)
         self.assertTrue(all(abs(a) <= 15 for a in rpy[:2]))
         self.assertTrue(free(w, *w.cave.point_at(3.0)[0], 0.15))  # el hueco sigue ahí
