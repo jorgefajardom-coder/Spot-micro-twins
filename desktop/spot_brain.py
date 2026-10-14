@@ -29,6 +29,7 @@ import sys
 import time
 
 import numpy as np
+from scipy.spatial import cKDTree
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "fly_brain"))
@@ -71,6 +72,12 @@ MAP_CUT = 0.5                                     # m: el mapa enseña solo lo d
 REAL_MAP_CUT = 1.2                                # m: lo mismo en la galería de mina
 MAP_MESH_PERIOD = 1.5                             # s: cada cuánto se reconstruye la superficie del mapa
 CAVE_CULLING = "front"                            # se ve la cara de la galería, no la de delante
+FLOOR_TILE_M = 2.5                                # m que cubre una tesela de la textura del suelo
+REVEAL_RADIUS = 0.35                              # m: lo que un impacto del LiDAR descubre de la cueva
+REVEAL_NEAR = 0.9                                 # m: alrededor del sensor se descubre todo
+REVEAL_GLOW_S = 0.8                               # s: destello cian al descubrirse, apagándose
+REVEAL_RGB = (90, 230, 255)                       # color del destello
+UNSEEN_RGB = (6, 8, 12)                           # la cueva aún sin escanear: a oscuras
 REAL_CAVE_CUT = 1.3                               # m sobre el suelo: techo quitado para ver al robot
 
 GAIT_SPEED = 1.5
@@ -261,19 +268,72 @@ def cave_shell(pv, cave, n_arc=48, every=1):
     return shell
 
 
-def cave_floor(pv, world, cell=0.03):
-    """Suelo de la cueva (rejilla con la altura del terreno), solo dentro de la galería."""
+def cave_floor(pv, world, cell=0.03, margin=0.06):
+    """Suelo de la cueva (rejilla con la altura del terreno que pisan los pies), solo dentro de
+    la galería, con coordenadas de textura en metros del mundo."""
     cave = world.cave
     lo, hi = cave.center.min(0) - 1.4, cave.center.max(0) + 1.4
     gx, gy = np.arange(lo[0], hi[0], cell), np.arange(lo[1], hi[1], cell)
     X, Y = np.meshgrid(gx, gy, indexing="ij")
     grid = pv.StructuredGrid(X, Y, world.ground(X, Y))
     d, i = cave._tree.query(np.column_stack([X.ravel(order="F"), Y.ravel(order="F")]))
-    grid.point_data["dentro"] = (d < cave.radius[i] + 0.06).astype(float)
-    floor = grid.threshold(0.5, scalars="dentro").extract_surface()
+    grid.point_data["dentro"] = (d < cave.radius[i] + margin).astype(float)
+    floor = grid.threshold(0.5, scalars="dentro").extract_surface(algorithm="dataset_surface")
+    floor.active_texture_coordinates = floor.points[:, :2] / FLOOR_TILE_M
     rng = np.random.default_rng(1)
     floor.point_data["roca"] = 0.5 + 0.08 * rng.standard_normal(floor.n_points)  # grano fino
     return floor
+
+
+def periodic_noise(rng, size, scale):
+    """Ruido suave que se repite sin costuras (filtrado en frecuencia); scale en píxeles."""
+    f = np.fft.fftfreq(size)
+    k = np.hypot(*np.meshgrid(f, f, indexing="ij"))
+    spectrum = np.fft.fft2(rng.standard_normal((size, size))) * np.exp(-(k * scale) ** 2)
+    n = np.real(np.fft.ifft2(spectrum))
+    return (n - n.mean()) / n.std()
+
+
+def floor_texture(size=1024, seed=11):
+    """Textura del suelo de la cueva (tesela sin costuras): sedimento, grava con volumen,
+    grietas y grano fino, iluminada a partir de un mapa de alturas."""
+    rng = np.random.default_rng(seed)
+    big, mid, fine = (periodic_noise(rng, size, s) for s in (90, 22, 2.5))
+    height = 0.6 * big + 0.35 * mid + 0.12 * fine
+    ridge = np.abs(periodic_noise(rng, size, 40))
+    cracks = np.clip(1 - ridge / 0.06, 0, 1) * (periodic_noise(rng, size, 120) > 0.2)
+    height -= 1.2 * cracks
+    sediment = np.array(hex_rgb("#6e5a46")), np.array(hex_rgb("#9a8670"))
+    t = np.clip(0.5 + 0.3 * big + 0.15 * mid, 0, 1)[..., None]
+    albedo = sediment[0] + t * (sediment[1] - sediment[0])
+    # Grava: piedras con forma de cúpula (dan sombra con la iluminación), envueltas en la tesela
+    yy, xx = np.mgrid[0:size, 0:size]
+    for _ in range(520):
+        r = rng.uniform(3, 9) if rng.random() < 0.8 else rng.uniform(10, 26)
+        aspect, ang = rng.uniform(0.45, 1.0), rng.uniform(0, np.pi)
+        cx, cy = rng.uniform(0, size, 2)
+        x0, y0 = int(cx - r) - 1, int(cy - r) - 1
+        n = int(2 * r) + 3
+        ix, iy = (np.arange(x0, x0 + n) % size), (np.arange(y0, y0 + n) % size)
+        dx = (np.arange(x0, x0 + n) - cx)[:, None]
+        dy = (np.arange(y0, y0 + n) - cy)[None, :]
+        u = dx * np.cos(ang) + dy * np.sin(ang)
+        v = (-dx * np.sin(ang) + dy * np.cos(ang)) / aspect
+        q = 1 - (u ** 2 + v ** 2) / r ** 2 + 0.35 * mid[np.ix_(ix, iy)] * (r / 26)  # canto irregular
+        inside = q > 0
+        dome = np.sqrt(np.clip(q, 0, 1)) * r * 0.08
+        sub = np.ix_(ix, iy)
+        height[sub] = np.where(inside, np.maximum(height[sub], dome + 0.2), height[sub])
+        tone = np.array(hex_rgb(rng.choice(["#8d8478", "#a39a8c", "#6f665b", "#b3a48c", "#5d5248"])))
+        tone = tone * rng.uniform(0.85, 1.1)
+        albedo[sub] = np.where(inside[..., None], tone, albedo[sub])
+    # Iluminación horneada (luz rasante desde arriba a la izquierda) y grano fino
+    gx, gy = np.gradient(height)
+    shade = np.clip(0.75 - 0.9 * gx - 0.6 * gy, 0.25, 1.25)
+    damp = np.clip(periodic_noise(rng, size, 70) - 0.4, 0, 1)  # manchas de humedad, más oscuras
+    img = (albedo * shade[..., None] * (1 + 0.06 * fine[..., None]) * (1 - 0.55 * cracks[..., None])
+           * (1 - 0.3 * damp[..., None]))
+    return (np.clip(img, 0, 1) * 255).astype(np.uint8)
 
 
 def gas_particles(world, n=2600, seed=5):
@@ -313,7 +373,6 @@ def real_cave_mesh(pv, cave, cut=REAL_CAVE_CUT):
     toma el color del punto escaneado más cercano. Se quita lo que queda a más de `cut` sobre
     el suelo para ver al robot desde arriba.
     """
-    from scipy.spatial import cKDTree
     surf = reconstruct_surface(pv, cave.points, cave.floor, cut=None, voxel=0.07 * cave.scale, sigma=1.0)
     height = surf.points[:, 2] - cave.floor(surf.points[:, 0], surf.points[:, 1])
     surf.point_data["h"] = height
@@ -329,12 +388,12 @@ def real_cave_mesh(pv, cave, cut=REAL_CAVE_CUT):
     dist = np.linalg.norm(to_axis, axis=1)
     facing = np.einsum("ij,ij->i", surf.cell_data["Normals"], to_axis) > 0
     inner = facing if np.median(dist[facing]) < np.median(dist[~facing]) else ~facing
-    surf = surf.extract_cells(np.flatnonzero(inner)).extract_surface()
+    surf = surf.extract_cells(np.flatnonzero(inner)).extract_surface(algorithm="dataset_surface")
     # Fuera las astillas sueltas que deja el recorte (se cruzarían delante del robot)
     surf = surf.connectivity("all")
     sizes = np.bincount(surf.cell_data["RegionId"])
     keep = np.flatnonzero(sizes[surf.cell_data["RegionId"]] > 0.02 * surf.n_cells)
-    surf = surf.extract_cells(keep).extract_surface()
+    surf = surf.extract_cells(keep).extract_surface(algorithm="dataset_surface")
     height = surf.point_data["h"]
     height = surf.point_data["h"]
     # Luminosidad del escáner promediada entre vecinos (un punto suelto es puro ruido)
@@ -489,13 +548,29 @@ class BrainViewer:
         self.leg_actors = [{bone: [pl.add_mesh(mesh(p), **style) for p in model.legs[leg][bone]]
                             for bone in BONES} for leg in range(4)]
 
+        self.floor_texture = pv.Texture(floor_texture())
+        self.floor_texture.repeat = True
+        self.floor_texture.mipmap = True
+        self.floor_texture.interpolate = True
         if self.real:
             self.cave_mesh = real_cave_mesh(pv, w.cave)
-            self.cave_base_z = self.cave_mesh.points[:, 2].copy()
-            self.cave_floor_mask = self.cave_mesh.point_data["h"] < 0.06  # vértices del suelo
+            # La cueva aparece a medida que el LiDAR la toca: empieza a oscuras
+            self.cave_rgb = np.asarray(self.cave_mesh.point_data["rgb"], np.float32).copy()
+            self.cave_tree = cKDTree(self.cave_mesh.points)
+            self.cave_seen = np.full(self.cave_mesh.n_points, -np.inf, np.float32)
+            self.cave_mesh.point_data["rgb"][:] = UNSEEN_RGB
+            # El suelo no se descubre: está desde el principio y no cambia mientras el Spot avanza
+            low = self.cave_mesh.point_data["h"] < 0.15
+            self.cave_seen[low] = -1e6
+            self.cave_mesh.point_data["rgb"][low] = self.cave_rgb[low].astype(np.uint8)
             real = pl.add_mesh(self.cave_mesh, scalars="rgb", rgb=True, smooth_shading=True, ambient=0.3,
                                diffuse=0.8, specular=0.08)
             real.prop.culling = CAVE_CULLING  # la pared que mira a la cámara no tapa al robot
+            # Suelo propio: la misma altura que pisan los pies (la malla del escaneo queda algo
+            # más baja) y la textura de sedimento y grava
+            self.floor_mesh = cave_floor(pv, w, cell=0.06, margin=0.3)
+            pl.add_mesh(self.floor_mesh, texture=self.floor_texture, smooth_shading=True, ambient=0.3,
+                        diffuse=0.85, specular=0.06)
         else:
             rock = dict(scalars="roca", cmap=gradient(["#2a211c", "#4d4036", "#6e6253", "#8a7c69"]),
                         clim=[0.2, 1.0], show_scalar_bar=False, smooth_shading=True, ambient=0.3,
@@ -503,7 +578,8 @@ class BrainViewer:
             shell = pl.add_mesh(cave_shell(pv, w.cave), **rock)
             shell.prop.culling = "front"  # la pared que mira a la cámara no tapa al robot
             self.floor_mesh = cave_floor(pv, w)
-            pl.add_mesh(self.floor_mesh, **rock)
+            pl.add_mesh(self.floor_mesh, texture=self.floor_texture, smooth_shading=True, ambient=0.3,
+                        diffuse=0.85, specular=0.06)
 
         # Fuente de calor: núcleo incandescente y halo
         hx, hy = w.heat_xy
@@ -675,17 +751,9 @@ class BrainViewer:
         """Botón / tecla t: terreno escarpado. El suelo, el LiDAR y los pies lo notan a la vez."""
         w = self.world
         w.terrain.rough = bool(on)
-        if self.real:
-            pts = self.cave_mesh.points
-            z = self.cave_base_z.copy()
-            m = self.cave_floor_mask
-            z[m] += w.terrain.height(pts[m, 0], pts[m, 1])  # el escarpado se suma al suelo real
-            pts[:, 2] = z
-            self.cave_mesh.points = pts
-        else:
-            pts = self.floor_mesh.points
-            pts[:, 2] = w.ground(pts[:, 0], pts[:, 1])
-            self.floor_mesh.points = pts
+        pts = self.floor_mesh.points
+        pts[:, 2] = w.ground(pts[:, 0], pts[:, 1])
+        self.floor_mesh.points = pts
         if self.rough_button.GetRepresentation().GetState() != int(bool(on)):
             self.rough_button.GetRepresentation().SetState(int(bool(on)))
 
@@ -776,7 +844,10 @@ class BrainViewer:
         if w.obstacle is not None:
             self.obstacle_actor.position = (*w.obstacle, float(w.ground(*w.obstacle)))
         hits, _ = w.last_scan
-        self.scan_points.update(hits[~np.isnan(hits[:, 0])])
+        hits = hits[~np.isnan(hits[:, 0])]
+        self.scan_points.update(hits)
+        if self.real:
+            self._reveal_cave(hits, np.r_[w.pose[:2], body[2]])
         if len(w.trail) > 1:
             tr = np.array(w.trail)
             tr = np.column_stack([tr, w.ground(tr[:, 0], tr[:, 1]) + 0.005]).astype(np.float32)
@@ -803,6 +874,27 @@ class BrainViewer:
             msg, col = "EXPLORING THE CAVE", CYAN
         self.state_text.SetInput(msg)
         self.state_text.GetTextProperty().SetColor(*hex_rgb(col))
+
+    def _reveal_cave(self, hits, sensor):
+        """Los vértices cerca de los impactos del LiDAR se descubren con un destello cian que se
+        apaga hasta el color de la roca; lo que no se ha escaneado sigue a oscuras."""
+        n = len(self.cave_seen)
+        if len(hits):
+            _, idx = self.cave_tree.query(hits, k=24, distance_upper_bound=REVEAL_RADIUS)
+            idx = np.unique(np.r_[idx[idx < n], self.cave_tree.query_ball_point(sensor, REVEAL_NEAR)])
+            idx = idx[~np.isfinite(self.cave_seen[idx])]
+            self.cave_seen[idx] = self.t
+        seen = np.isfinite(self.cave_seen)
+        glowing = seen & (self.t - self.cave_seen < 4 * REVEAL_GLOW_S)
+        if not glowing.any() and not len(hits):
+            return
+        rgb = self.cave_mesh.point_data["rgb"]
+        g = np.exp(-(self.t - self.cave_seen[glowing]) / REVEAL_GLOW_S)[:, None]
+        base = self.cave_rgb[glowing]
+        rgb[glowing] = (base + g * (np.array(REVEAL_RGB) - base)).astype(np.uint8)
+        done = seen & ~glowing
+        rgb[done] = self.cave_rgb[done]
+        self.cave_mesh.GetPointData().GetArray("rgb").Modified()
 
     def _draw_brain(self):
         self.pl.subplot(*self.BRAIN)
