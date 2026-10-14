@@ -15,7 +15,7 @@ from matplotlib.widgets import Button, CheckButtons
 
 from spot_dance import Dance
 from spot_model3d import SpotModel, SpotScene, solve_skeleton
-from spotmicro_gui import Kinematics
+from kinematics import Kinematics
 
 BG = (0.055, 0.07, 0.095)
 TWIN_OFFSETS = [(0, 0.19, 0), (0, -0.19, 0)]

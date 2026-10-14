@@ -114,42 +114,10 @@ def send_command(command):
         ws = None
         return False
 
-# -----------------------------
-# Utilidades matemáticas
-# -----------------------------
-def RotMatrix3D(rot, is_radians=True):
-    """Matriz de rotación 3D ZYX (yaw, pitch, roll)."""
-    if not is_radians:
-        rot = [radians(r) for r in rot]
-    roll, pitch, yaw = rot
-    Rz = np.array([
-        [cos(yaw), -sin(yaw), 0],
-        [sin(yaw),  cos(yaw), 0],
-        [0, 0, 1]
-    ])
-    Ry = np.array([
-        [cos(pitch), 0, sin(pitch)],
-        [0, 1, 0],
-        [-sin(pitch), 0, cos(pitch)]
-    ])
-    Rx = np.array([
-        [1, 0, 0],
-        [0, cos(roll), -sin(roll)],
-        [0, sin(roll),  cos(roll)]
-    ])
-    return Rz @ Ry @ Rx
+# Cinemática y marchas viven en kinematics.py y gait.py
+from kinematics import RotMatrix3D, point_to_rad, normalize_angle, Kinematics
+from gait import GaitManager
 
-def point_to_rad(y, z):
-    return atan2(z, y)
-
-def normalize_angle(angle_rad):
-    """Normaliza un ángulo en radianes al rango [-pi, pi]"""
-    angle_rad = angle_rad % (2 * pi)
-    if angle_rad > pi:
-        angle_rad -= 2 * pi
-    elif angle_rad < -pi:
-        angle_rad += 2 * pi
-    return angle_rad
 # --- Clase para manejar datos del MPU-6050 ---
 class MPU6050Handler:
     def __init__(self):
@@ -291,465 +259,6 @@ class MPU6050Handler:
             print(f"⚠️ Error procesando datos MPU: {e}")  
 # Crear instancia global del manejador MPU
 mpu_handler = MPU6050Handler()
-# -----------------------------
-# Clase Cinemática
-# -----------------------------
-class Kinematics:
-    def __init__(self):
-        self.left_front, self.left_back, self.right_back, self.right_front = 0, 1, 2, 3
-        self.right_legs = [self.right_front, self.right_back]
-        self.link_1, self.link_2, self.link_3 = 0.052, 0.118, 0.135   #0.053, 0.105, 0.132
-        self.phi = radians(90)
-        self.length, self.width = 0.185, 0.075
-        self.leg_origins = np.array([
-            [ self.length/2,  self.width/2, 0.0],
-            [-self.length/2,  self.width/2, 0.0],
-            [-self.length/2, -self.width/2, 0.0],
-            [ self.length/2, -self.width/2, 0.0],
-        ], dtype=float)
-        
-        # Calcular límites físicos
-        self.min_reach = 0.01  # Distancia mínima alcanzable
-        self.max_reach = self.link_1 + self.link_2 + self.link_3  # Distancia máxima alcanzable
-
-    def check_physical_limits(self, xyz_local, legID=0):
-        """Verificar si el punto está dentro del espacio de trabajo físico"""
-        x, y, z = xyz_local
-        
-        # Calcular distancia desde el origen de la pierna
-        distance = norm([x, y, z])
-        
-        # Verificar límites de distancia
-        if distance < self.min_reach:
-            return False, f"Pierna {legID}: Punto demasiado cercano (dist: {distance:.3f}m < min: {self.min_reach:.3f}m)"
-        elif distance > self.max_reach:
-            return False, f"Pierna {legID}: Punto demasiado lejano (dist: {distance:.3f}m > max: {self.max_reach:.3f}m)"
-        
-        # Verificar límites en el plano YZ para theta1
-        if abs(y) < 1e-6 and abs(z) < 1e-6:
-            return False, f"Pierna {legID}: Punto en el eje de rotación (Y,Z ≈ 0)"
-        
-        # Verificar límites de la cinemática inversa
-        len_A = norm([0.0, y, z])
-        sin_val = (sin(self.phi) * self.link_1) / len_A
-        
-        if abs(sin_val) > 0.9999:
-            return False, f"Pierna {legID}: Límite físico alcanzado en theta1"
-        
-        return True, ""
-
-    def leg_IK(self, xyz, rot=[0,0,0], legID=0, is_radians=True, body_pos=[0,0,0]):
-        xyz = np.asarray(xyz, dtype=float).flatten()
-        R_body = np.asarray(RotMatrix3D(rot, is_radians)).reshape(3,3)
-        leg_origin = np.asarray(self.leg_origins[legID], dtype=float).flatten()
-        j1_world = R_body.dot(leg_origin) + np.asarray(body_pos)
-        foot_world = np.asarray(xyz)
-        foot_local = R_body.T.dot(foot_world - j1_world)
-        
-        # Verificar límites físicos antes de calcular IK
-        reachable, error_msg = self.check_physical_limits(foot_local, legID)
-        if not reachable:
-            # Retornar ángulos NaN para indicar error
-            return [float('nan'), float('nan'), float('nan'), 
-                    np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3)]
-        
-        return self.leg_IK_calc(foot_local, is_right=(legID in self.right_legs))
-
-    def leg_IK_calc(self, xyz, is_right=False):
-        x, y, z = xyz
-        
-        # Mejorar el cálculo del primer ángulo
-        len_A = max(norm([0.0, y, z]), 1e-8)  # Evitar división por cero
-        a_1 = atan2(z, y)  # Ya usas atan2, está bien
-        
-        # Mejorar el cálculo de a_2 con límites más estrictos
-        sin_val = (sin(self.phi) * self.link_1) / len_A
-        sin_val = max(-0.9999, min(0.9999, sin_val))  # Evitar valores en los límites
-        a_2 = asin(sin_val)
-        
-        a_3 = pi - a_2 - self.phi
-        
-        if is_right:
-            theta_1 = a_1 - a_3
-        else:
-            theta_1 = a_1 + a_3
-        
-        # Normalizar theta_1 inmediatamente
-        theta_1 = normalize_angle(theta_1)
-        
-        # Cálculo de juntas
-        j2 = np.array([0.0, self.link_1 * cos(theta_1), self.link_1 * sin(theta_1)])
-        j4 = np.array([x, y, z])
-        j4_2_vec = j4 - j2
-        
-        R = theta_1 - self.phi - pi/2 if is_right else theta_1 + self.phi - pi/2
-        R = normalize_angle(R)  # Normalizar R también
-        
-        rot_mtx = RotMatrix3D([-R, 0, 0], is_radians=True)
-        j4_2_vec_ = rot_mtx.dot(j4_2_vec)
-        x_, _, z_ = j4_2_vec_
-        
-        len_B = min(norm([x_, z_]), (self.link_2 + self.link_3) * 0.9999)
-        
-        # Verificar límites de la triangulación
-        if len_B > (self.link_2 + self.link_3) * 0.999:
-            return [float('nan'), float('nan'), float('nan'), 
-                    np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3)]
-        
-        # Mejorar cálculos de ángulos con atan2
-        b_1 = atan2(z_, x_)  # Más robusto que point_to_rad
-        
-        # Limitar valores para acos
-        cos_b2 = (self.link_2**2 + len_B**2 - self.link_3**2) / (2 * self.link_2 * len_B)
-        cos_b2 = max(-0.9999, min(0.9999, cos_b2))
-        b_2 = acos(cos_b2)
-        
-        cos_b3 = (self.link_2**2 + self.link_3**2 - len_B**2) / (2 * self.link_2 * self.link_3)
-        cos_b3 = max(-0.9999, min(0.9999, cos_b3))
-        b_3 = acos(cos_b3)
-        
-        theta_2 = b_1 - b_2
-        theta_3 = pi - b_3
-        
-        # Normalizar theta_2 y theta_3
-        theta_2 = normalize_angle(theta_2)
-        theta_3 = normalize_angle(theta_3)
-        
-        # Cálculo de posiciones de juntas para visualización
-        j1 = np.zeros(3)
-        j3_rot = np.array([self.link_2 * cos(theta_2), 0.0, self.link_2 * sin(theta_2)])
-        j3_world = j2 + np.linalg.inv(rot_mtx).dot(j3_rot)
-        j4_rot = j3_rot + np.array([self.link_3 * cos(theta_2 + theta_3), 0.0, self.link_3 * sin(theta_2 + theta_3)])
-        j4_world = j2 + np.linalg.inv(rot_mtx).dot(j4_rot)
-        
-        angles = self.angle_corrector([theta_1, theta_2, theta_3], is_right)
-        return [*angles, j1, j2, j3_world.flatten(), j4_world.flatten()]
-    
-    def angle_corrector(self, angles, is_right=True):
-        a0, a1, a2 = angles
-        a1 -= 1.5*pi
-        if is_right:
-            t1, t2 = a0 - pi, a1 + radians(45)
-        else:
-            t1 = a0 - 2*pi if a0 > pi else a0
-            t2 = -a1 - radians(45)
-        t3 = -a2 + radians(45)
-        return [t1, t2, t3]
-
-    def compute_jacobian(self, angles, legID=0, is_right=False):
-        """Calcula el Jacobiano para una pata específica"""
-        theta1, theta2, theta3 = angles
-        
-        # Parámetros de la pata
-        l1, l2, l3 = self.link_1, self.link_2, self.link_3
-        phi = self.phi
-        
-        # Para patas derechas
-        if is_right:
-            # Derivadas parciales para posición del efector final
-            dx_dtheta1 = -l3*cos(theta2 + theta3)*sin(theta1 - phi - pi/2) - l2*cos(theta2)*sin(theta1 - phi - pi/2)
-            dx_dtheta2 = -l3*sin(theta2 + theta3)*cos(theta1 - phi - pi/2) - l2*sin(theta2)*cos(theta1 - phi - pi/2)
-            dx_dtheta3 = -l3*sin(theta2 + theta3)*cos(theta1 - phi - pi/2)
-            
-            dy_dtheta1 = l1*cos(theta1) + l3*cos(theta2 + theta3)*cos(theta1 - phi - pi/2) + l2*cos(theta2)*cos(theta1 - phi - pi/2)
-            dy_dtheta2 = -l3*sin(theta2 + theta3)*sin(theta1 - phi - pi/2) - l2*sin(theta2)*sin(theta1 - phi - pi/2)
-            dy_dtheta3 = -l3*sin(theta2 + theta3)*sin(theta1 - phi - pi/2)
-            
-            dz_dtheta1 = l1*sin(theta1) + l3*cos(theta2 + theta3)*sin(theta1 - phi - pi/2) + l2*cos(theta2)*sin(theta1 - phi - pi/2)
-            dz_dtheta2 = l3*sin(theta2 + theta3)*cos(theta1 - phi - pi/2) + l2*sin(theta2)*cos(theta1 - phi - pi/2)
-            dz_dtheta3 = l3*sin(theta2 + theta3)*cos(theta1 - phi - pi/2)
-        else:
-            # Para patas izquierdas
-            dx_dtheta1 = -l3*cos(theta2 + theta3)*sin(theta1 + phi - pi/2) - l2*cos(theta2)*sin(theta1 + phi - pi/2)
-            dx_dtheta2 = -l3*sin(theta2 + theta3)*cos(theta1 + phi - pi/2) - l2*sin(theta2)*cos(theta1 + phi - pi/2)
-            dx_dtheta3 = -l3*sin(theta2 + theta3)*cos(theta1 + phi - pi/2)
-            
-            dy_dtheta1 = l1*cos(theta1) + l3*cos(theta2 + theta3)*cos(theta1 + phi - pi/2) + l2*cos(theta2)*cos(theta1 + phi - pi/2)
-            dy_dtheta2 = -l3*sin(theta2 + theta3)*sin(theta1 + phi - pi/2) - l2*sin(theta2)*sin(theta1 + phi - pi/2)
-            dy_dtheta3 = -l3*sin(theta2 + theta3)*sin(theta1 + phi - pi/2)
-            
-            dz_dtheta1 = l1*sin(theta1) + l3*cos(theta2 + theta3)*sin(theta1 + phi - pi/2) + l2*cos(theta2)*sin(theta1 + phi - pi/2)
-            dz_dtheta2 = l3*sin(theta2 + theta3)*cos(theta1 + phi - pi/2) + l2*sin(theta2)*cos(theta1 + phi - pi/2)
-            dz_dtheta3 = l3*sin(theta2 + theta3)*cos(theta1 + phi - pi/2)
-        
-        # Construir matriz Jacobiana
-        J = np.array([
-            [dx_dtheta1, dx_dtheta2, dx_dtheta3],
-            [dy_dtheta1, dy_dtheta2, dy_dtheta3],
-            [dz_dtheta1, dz_dtheta2, dz_dtheta3]
-        ])
-        
-        return J
-
-    def differential_ik(self, current_angles, velocity, legID=0, dt=0.1):
-        """Cinemática diferencial para mover el efector con una velocidad específica"""
-        is_right = (legID in self.right_legs)
-        
-        # Calcular el Jacobiano en la configuración actual
-        J = self.compute_jacobian(current_angles, legID, is_right)
-        
-        # Verificar si el Jacobiano es singular
-        if np.linalg.matrix_rank(J) < 3:
-            print(f"⚠️ Jacobiano singular para pata {legID}")
-            return current_angles
-        
-        # Calcular la pseudoinversa del Jacobiano
-        J_pinv = np.linalg.pinv(J)
-        
-        # Calcular el cambio en los ángulos de las articulaciones
-        delta_theta = J_pinv @ velocity * dt
-        
-        # Aplicar el cambio a los ángulos actuales
-        new_angles = current_angles + delta_theta
-        
-        return new_angles
-
-    def plot_robot(self, ax, foot_targets, rot=[0,0,0], body_pos=[0,0,0], is_radians=False, limit=0.25):
-        ax.clear()
-        R_body = RotMatrix3D(rot, is_radians)
-        base_points = (R_body.dot(self.leg_origins.T)).T + np.asarray(body_pos)
-
-        xs, ys, zs = np.append(base_points[:,0], base_points[0,0]), np.append(base_points[:,1], base_points[0,1]), np.append(base_points[:,2], base_points[0,2])
-        ax.plot3D(xs, ys, zs, 'r-', linewidth=2)
-        ax.scatter(base_points[:,0], base_points[:,1], base_points[:,2], color='red', s=50)
-
-        angles_list = []
-        physical_errors = []
-        
-        for legID in range(4):
-            angles_joints = self.leg_IK(foot_targets[legID], rot, legID, is_radians, body_pos)
-            
-            # Verificar si hay errores físicos (ángulos NaN)
-            if any(np.isnan(angles_joints[:3])):
-                physical_errors.append(legID)
-                # Dibujar el punto objetivo en rojo para indicar error
-                j4g = np.asarray(foot_targets[legID])
-                ax.scatter(j4g[0], j4g[1], j4g[2], color='red', s=100, marker='X')
-                angles_list.append([float('nan'), float('nan'), float('nan')])
-                continue
-                
-            j1, j2, j3, j4 = angles_joints[3:]
-            leg_origin = self.leg_origins[legID]
-            j1g = R_body.dot(j1 + leg_origin) + body_pos
-            j2g = R_body.dot(j2 + leg_origin) + body_pos
-            j3g = R_body.dot(j3 + leg_origin) + body_pos
-            j4g = np.asarray(foot_targets[legID])
-            p = np.vstack([j1g, j2g, j3g, j4g])
-            ax.plot3D(p[:,0], p[:,1], p[:,2], 'b-o', linewidth=2)
-            ax.scatter(j4g[0], j4g[1], j4g[2], color='green', s=80, marker='*')
-            angles_list.append(angles_joints[:3])
-            
-        ax.set_xlim(-limit, limit); ax.set_ylim(-limit, limit); ax.set_zlim(0, 0.25)
-        ax.set_xlabel("X (m)"); ax.set_ylabel("Y (m)"); ax.set_zlabel("Z (m)")
-        ax.set_title("Robot SpotMini - Cinemática Inversa"); ax.grid(True)
-        
-        # Retornar también los errores físicos
-        return angles_list, physical_errors
-# -----------------------------
-# Gaits
-# -----------------------------
-class GaitManager:
-    def __init__(self, kinematics):
-        self.kin = kinematics
-        self.active_gait = None
-        self.gait_phase = 0.0
-        self.gait_speed = 1.0
-        self.is_moving = False
-        self.gait_thread = None
-        self.stop_gait_flag = False
-        
-        # Parámetros de gaits
-        self.gait_parameters = {
-            'crawling': {
-                'step_height': 0.05,
-                'step_length': 0.08,
-                'cycle_time': 2.0,
-                'duty_factor': 0.75,
-                'phase_offset': [0.0, 0.25, 0.5, 0.75]
-            },
-            'walking': {
-                'step_height': 0.04,
-                'step_length': 0.06,
-                'cycle_time': 1.5,
-                'duty_factor': 0.6,
-                'phase_offset': [0.0, 0.5, 0.25, 0.75]
-            },
-            'trotting': {
-                'step_height': 0.03,
-                'step_length': 0.10,
-                'cycle_time': 1.0,
-                'duty_factor': 0.5,
-                'phase_offset': [0.0, 0.5, 0.0, 0.5]
-            },
-            'standing': {
-                'step_height': 0.0,
-                'step_length': 0.0,
-                'cycle_time': 1.0,
-                'duty_factor': 1.0,
-                'phase_offset': [0.0, 0.0, 0.0, 0.0]
-            }
-        }
-        
-        self.neutral_positions = [
-            [0.10, 0.08, -0],
-            [-0.10, 0.08, -0],
-            [-0.10, -0.08, -0],
-            [0.10, -0.08, -0]
-        ]
-        
-        self.current_leg_positions = self.neutral_positions.copy()
-    
-    def _calculate_leg_positions(self, direction, params):
-        """Calcular posiciones de las patas basado en la fase del gait"""
-        positions = []
-        dx, dy = direction
-        
-        for leg_id in range(4):
-            phase_offset = params['phase_offset'][leg_id]
-            leg_phase = (self.gait_phase + phase_offset) % 1.0
-            
-            # Posición base (neutral)
-            base_x, base_y, base_z = self.neutral_positions[leg_id]
-            
-            if leg_phase < params['duty_factor']:
-                # Fase de apoyo (stance)
-                progress = leg_phase / params['duty_factor']
-                swing_x = base_x - dx * params['step_length'] * progress
-                swing_y = base_y - dy * params['step_length'] * progress
-                swing_z = base_z
-            else:
-                # Fase de balanceo (swing)
-                swing_progress = (leg_phase - params['duty_factor']) / (1.0 - params['duty_factor'])
-                
-                # Curva de elevación (sinusoide simple)
-                lift_height = math.sin(swing_progress * math.pi) * params['step_height']  # Usar math.sin
-                
-                swing_x = base_x + dx * params['step_length'] * (1 - swing_progress)
-                swing_y = base_y + dy * params['step_length'] * (1 - swing_progress)
-                swing_z = base_z + lift_height
-            
-            positions.append([swing_x, swing_y, swing_z])
-        
-        return positions
-
-    def set_gait(self, gait_name):
-        """Configurar el gait activo"""
-        if gait_name in self.gait_parameters:
-            self.active_gait = gait_name
-            print(f"✅ Gait configurado: {gait_name}")
-            return True
-        else:
-            print(f"❌ Gait no reconocido: {gait_name}")
-            return False
-    
-    def start_gait(self, direction=(1, 0), speed_multiplier=1.0):
-        """Iniciar el movimiento con el gait activo"""
-        if self.active_gait is None:
-            print("❌ No hay gait configurado")
-            return False
-        
-        if self.is_moving:
-            self.stop_gait()
-        
-        self.is_moving = True
-        self.stop_gait_flag = False
-        self.gait_speed = speed_multiplier
-        
-        # Iniciar hilo de movimiento
-        self.gait_thread = threading.Thread(
-            target=self._gait_loop, 
-            args=(direction,),
-            daemon=True
-        )
-        self.gait_thread.start()
-        print(f"🚀 Iniciando gait: {self.active_gait}")
-        return True
-    
-    def stop_gait(self):
-        """Detener el movimiento y volver a posición inicial (standing)"""
-        self.stop_gait_flag = True
-        self.is_moving = False
-        
-        # Transición suave a posiciones neutrales (standing)
-        if hasattr(self, 'current_leg_positions'):
-            # Calcular interpolación suave hacia las posiciones neutrales
-            steps = 10  # Número de pasos para la transición
-            current_positions = self.current_leg_positions.copy()
-            
-            def smooth_transition():
-                for step in range(1, steps + 1):
-                    if self.is_moving:  # Si se reactiva el movimiento, cancelar transición
-                        return
-                        
-                    alpha = step / steps
-                    for i in range(4):
-                        # Interpolar suavemente hacia la posición neutral
-                        current = current_positions[i]
-                        target = self.neutral_positions[i]
-                        
-                        new_pos = [
-                            current[0] + (target[0] - current[0]) * alpha,
-                            current[1] + (target[1] - current[1]) * alpha,
-                            current[2] + (target[2] - current[2]) * alpha
-                        ]
-                        self.current_leg_positions[i] = new_pos
-                    
-                    # Pequeña pausa para suavizar la transición
-                    time.sleep(0.05)
-                
-                # Asegurar que llegamos exactamente a las posiciones neutrales
-                for i in range(4):
-                    self.current_leg_positions[i] = self.neutral_positions[i].copy()
-            
-            # Ejecutar transición en hilo separado
-            transition_thread = threading.Thread(target=smooth_transition, daemon=True)
-            transition_thread.start()
-        
-        if self.gait_thread and self.gait_thread.is_alive():
-            self.gait_thread.join(timeout=1.0)
-        print("🛑 Gait detenido - Volviendo a posición inicial")
-    
-    def _gait_loop(self, direction):
-        """Loop principal de movimiento del gait"""
-        params = self.gait_parameters[self.active_gait]
-        cycle_time = params['cycle_time'] / self.gait_speed
-        last_time = time.time()
-        
-        while not self.stop_gait_flag and self.is_moving:
-            current_time = time.time()
-            dt = current_time - last_time
-            
-            # Actualizar fase del gait
-            self.gait_phase = (self.gait_phase + (dt / cycle_time)) % 1.0
-            
-            # Calcular posiciones para cada pata
-            new_positions = self._calculate_leg_positions(direction, params)
-            
-            # Actualizar posiciones (aquí deberías integrar con tu sistema actual)
-            self.current_leg_positions = new_positions
-            
-            # Aquí deberías llamar a tu función de actualización de cinemática
-            # Por ejemplo: self.update_robot_visualization(new_positions)
-            
-            last_time = current_time
-            time.sleep(0.02)  # 50Hz
-    
-    def get_current_positions(self):
-        """Obtener las posiciones actuales de las patas"""
-        return self.current_leg_positions
-    
-    def set_neutral_positions(self, positions):
-        """Establecer nuevas posiciones neutrales"""
-        self.neutral_positions = positions.copy()
-    
-    def update_gait_parameter(self, gait_name, parameter, value):
-        """Actualizar parámetros específicos de un gait"""
-        if gait_name in self.gait_parameters and parameter in self.gait_parameters[gait_name]:
-            self.gait_parameters[gait_name][parameter] = value
-            print(f"✅ Parámetro {parameter} de {gait_name} actualizado a {value}")
-            return True
-        return False
-
 
 
     # -----------------------------
@@ -761,7 +270,7 @@ class RobotGUI:
     # -----------------------------
     def __init__(self, root):
         self.root = root
-        self.root.title("Control del Robot - Cinemática Inversa y Diferencial")
+        self.root.title("Spot Micro Twins - Control del Robot")
         self.root.geometry("1370x765")
         self.kin = Kinematics()
         self.leg_vars, self.platform_vars = [], {}
@@ -828,6 +337,7 @@ class RobotGUI:
         self.active_gait_var = tk.StringVar(value="standing")
         self.gait_direction_x = tk.DoubleVar(value=0.0)
         self.gait_direction_y = tk.DoubleVar(value=0.0)
+        self.gait_turn = tk.DoubleVar(value=0.0)
         self.gait_speed_var = tk.DoubleVar(value=1.0)
 
         # =============================================================================
@@ -1938,8 +1448,12 @@ class RobotGUI:
         self.update_differential_visualization()
 
     def setup_differential_plot(self, parent):
+        from robot_view import RobotViewport
         self.diff_fig = plt.Figure(figsize=(6, 5))
         self.diff_ax = self.diff_fig.add_subplot(111, projection='3d')
+        self.diff_viewport = RobotViewport(self.diff_ax, self.kin)
+        self.diff_ax._robot_viewport = self.diff_viewport
+        self.diff_viewport.add_controls(parent)
         self.diff_canvas = FigureCanvasTkAgg(self.diff_fig, parent)
         self.diff_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
@@ -3593,7 +3107,15 @@ class RobotGUI:
         ttk.Scale(dir_y_frame, from_=-1.0, to=1.0, orient=tk.HORIZONTAL,
                 variable=self.gait_direction_y).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         ttk.Label(dir_y_frame, textvariable=self.gait_direction_y, width=4).pack(side=tk.RIGHT, padx=5)
-        
+
+        # Giro (positivo = antihorario)
+        turn_frame = ttk.Frame(control_frame)
+        turn_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(turn_frame, text="Giro:").pack(side=tk.LEFT, padx=5)
+        ttk.Scale(turn_frame, from_=-1.0, to=1.0, orient=tk.HORIZONTAL,
+                variable=self.gait_turn).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        ttk.Label(turn_frame, textvariable=self.gait_turn, width=4).pack(side=tk.RIGHT, padx=5)
+
         # Velocidad
         speed_frame = ttk.Frame(control_frame)
         speed_frame.pack(fill=tk.X, pady=2)
@@ -3633,7 +3155,7 @@ class RobotGUI:
         direction = (self.gait_direction_x.get(), self.gait_direction_y.get())
         speed = self.gait_speed_var.get()
         
-        if self.gait_manager.start_gait(direction, speed):
+        if self.gait_manager.start_gait(direction, speed, turn=self.gait_turn.get()):
             self.gait_status_var.set(f"Gait: {self.active_gait_var.get().capitalize()} (Activo)")
             # Iniciar actualización de visualización solo si el gait se inició correctamente
             self.start_gait_visualization_update()
@@ -3875,6 +3397,10 @@ class RobotGUI:
     def start_gait_visualization_update(self):
         """Iniciar actualización periódica de la visualización durante el movimiento del gait"""
         if self.gait_manager.is_moving:
+            # Los sliders mandan en vivo mientras camina
+            self.gait_manager.set_command(self.gait_direction_x.get(),
+                                          self.gait_direction_y.get(),
+                                          self.gait_turn.get())
             # Obtener las posiciones actuales del gait manager
             current_positions = self.gait_manager.get_current_positions()
             
@@ -4725,9 +4251,13 @@ class RobotGUI:
 
     
     def setup_plot(self, parent):
+        from robot_view import RobotViewport
         # Reducir el tamaño de la figura
         self.fig = plt.Figure(figsize=(8, 6))  # Cambiar de (8, 6) a (6, 5)
         self.ax = self.fig.add_subplot(111, projection='3d')
+        self.viewport = RobotViewport(self.ax, self.kin)
+        self.ax._robot_viewport = self.viewport
+        self.viewport.add_controls(parent)
         self.canvas = FigureCanvasTkAgg(self.fig, parent)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
