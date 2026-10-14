@@ -37,9 +37,9 @@ def gradient(colors, name="degradado"):
 
 
 LAYERS = {
-    "altura": dict(cmap=gradient(SCAN_COLORS), title="Roca (altura, m)"),
-    "gas_ppm": dict(cmap=gradient(GAS_COLORS), title="Gas medido (ppm)"),
-    "temp_c": dict(cmap="inferno", title="Temperatura medida (°C)"),
+    "altura": dict(cmap=gradient(SCAN_COLORS), title="Rock (height, m)"),
+    "gas_ppm": dict(cmap=gradient(GAS_COLORS), title="Measured gas (ppm)"),
+    "temp_c": dict(cmap="inferno", title="Measured temperature (°C)"),
 }
 
 
@@ -129,17 +129,20 @@ def save_model(mesh, meta):
 
 
 class Explorer:
-    """Ventana para recorrer la cueva: capas Roca / Gas / Temperatura y corte del techo."""
+    """Ventana para recorrer la cueva: capas Roca / Gas / Temperatura, corte del techo (para ver
+    dentro) o la cueva cerrada entera."""
 
     def __init__(self, mesh, meta, off_screen=False, size=(1600, 950)):
         import pyvista as pv
         self.pv, self.mesh, self.meta = pv, mesh, meta
         self.layer = "gas_ppm" if "gas_ppm" in mesh.point_data else "altura"
-        self.cut = 0.6
         self.ground_z = float(np.percentile(mesh.points[:, 2], 3))
+        self.top = float(mesh.points[:, 2].max() - self.ground_z) + 0.05  # altura máxima de la cueva
+        self.cut = round(0.45 * self.top, 2)
+        self.closed = False
         pv.global_theme.font.family = "arial"
         pl = self.pl = pv.Plotter(window_size=size, off_screen=off_screen,
-                                  title="Spot Micro Twins · Cueva reconstruida")
+                                  title="Spot Micro Twins · Reconstructed cave")
         pl.set_background(MAP_BG)
         b = mesh.bounds
         cx, cy = (b[0] + b[1]) / 2, (b[2] + b[3]) / 2
@@ -160,31 +163,37 @@ class Explorer:
             gx, gy = meta["gas_found"]
             ppm = max(samples[:, 3]) if len(samples) else 0
             pl.add_mesh(pv.Sphere(radius=0.09, center=(gx, gy, self.ground_z + 0.3)), color="#7dff6b", ambient=0.6)
-            pl.add_point_labels([(gx, gy, self.ground_z + 0.45)], [f"Fuga de gas · {ppm:.0f} ppm"], font_size=14,
+            pl.add_point_labels([(gx, gy, self.ground_z + 0.45)], [f"Gas leak · {ppm:.0f} ppm"], font_size=14,
                                 text_color="w", shape_color="#1f6f5c", shape_opacity=0.85, always_visible=True,
                                 show_points=False)
         hot = meta.get("hottest")
         if hot and hot[4] > 30:
-            pl.add_point_labels([(hot[0], hot[1], hot[2] + 0.25)], [f"Calor · {hot[4]:.0f} °C máx."],
+            pl.add_point_labels([(hot[0], hot[1], hot[2] + 0.25)], [f"Heat · {hot[4]:.0f} °C max"],
                                 font_size=14, text_color="w", shape_color="#a3361f", shape_opacity=0.85,
                                 always_visible=True, show_points=False)
 
-        pl.add_text("CUEVA RECONSTRUIDA", position=(24, size[1] - 56), font_size=20, color="#f4c542")
-        pl.add_text(f"{meta.get('voxels', 0):,} vóxeles de LiDAR · {mesh.n_cells:,} triángulos · "
-                    f"recorrido {meta.get('recorrido_m', 0):.1f} m · {len(samples)} mediciones".replace(",", "."),
+        pl.add_text("RECONSTRUCTED CAVE", position=(24, size[1] - 56), font_size=20, color="#f4c542")
+        pl.add_text(f"{meta.get('voxels', 0):,} LiDAR voxels · {mesh.n_cells:,} triangles · "
+                    f"route {meta.get('recorrido_m', 0):.1f} m · {len(samples)} readings",
                     position=(26, size[1] - 86), font_size=11, color="#8fa5be")
-        pl.add_text("ratón: girar · rueda: zoom · mayús+arrastrar: desplazar · f: volar al punto",
+        pl.add_text("mouse: rotate · wheel: zoom · shift+drag: pan · f: fly to point",
                     position=(26, 16), font_size=10, color="#8fa5be")
         # Capas (botones como radio) y corte del techo
         self.buttons = {}
-        for i, (name, label) in enumerate((("altura", "Roca"), ("gas_ppm", "Gas"), ("temp_c", "Temperatura"))):
+        for i, (name, label) in enumerate((("altura", "Rock"), ("gas_ppm", "Gas"), ("temp_c", "Temperature"))):
             y = size[1] - 150 - i * 46
             self.buttons[name] = pl.add_checkbox_button_widget(
                 lambda on, n=name: self.set_layer(n), value=name == self.layer, position=(26, y), size=32,
                 border_size=2, color_on="#f4c542", color_off="#2a3646", background_color="#8fa5be")
             pl.add_text(label, position=(68, y + 6), font_size=13, color="w")
-        pl.add_slider_widget(self.set_cut, [0.2, 1.6], value=self.cut, title="Corte del techo (m)",
-                             pointa=(0.62, 0.08), pointb=(0.95, 0.08), color="#8fa5be", style="modern")
+        self.slider = pl.add_slider_widget(self.set_cut, [0.2, self.top], value=self.cut, title="Ceiling cut (m)",
+                                           pointa=(0.62, 0.08), pointb=(0.95, 0.08), color="#8fa5be",
+                                           style="modern")
+        # Cueva cerrada: sin corte, la malla entera con su techo
+        self.closed_button = pl.add_checkbox_button_widget(
+            self.set_closed, value=False, position=(26, 60), size=32, border_size=2,
+            color_on="#40c4ff", color_off="#2a3646", background_color="#8fa5be")
+        pl.add_text("Closed cave", position=(68, 66), font_size=13, color="w")
         pl.camera.focal_point = (cx, cy, self.ground_z)
         pl.camera.position = (cx - span * 0.55, cy - span * 0.7, self.ground_z + span * 0.75)
         pl.camera.up = (0, 0, 1)
@@ -197,12 +206,21 @@ class Explorer:
         self.draw()
 
     def set_cut(self, value):
+        """Mover el corte abre la cueva otra vez."""
         self.cut = float(value)
+        if self.closed:
+            self.closed = False
+            self.closed_button.GetRepresentation().SetState(0)
+        self.draw()
+
+    def set_closed(self, on):
+        self.closed = bool(on)
         self.draw()
 
     def draw(self):
         pl, cfg = self.pl, LAYERS[self.layer]
-        visible = self.mesh.clip("z", origin=(0, 0, self.ground_z + self.cut), invert=True)
+        visible = (self.mesh if self.closed else
+                   self.mesh.clip("z", origin=(0, 0, self.ground_z + self.cut), invert=True))
         args = dict(scalars=self.layer, cmap=cfg["cmap"], nan_color=NAN_COLOR, smooth_shading=True,
                     ambient=0.25, diffuse=0.85, specular=0.15, specular_power=12, name="cueva")
         if self.layer != "altura":
@@ -225,11 +243,14 @@ class Explorer:
     def show(self):
         self.pl.show()
 
-    def screenshot(self, path, layer=None, cut=None):
+    def screenshot(self, path, layer=None, cut=None, closed=None):
         if layer:
             self.set_layer(layer)
         if cut is not None:
             self.set_cut(cut)
+        if closed is not None:
+            self.closed_button.GetRepresentation().SetState(int(closed))
+            self.set_closed(closed)
         self.pl.screenshot(str(path))
 
 
