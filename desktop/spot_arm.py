@@ -3,7 +3,7 @@
 Proporciones del Spot Arm (mm): brazo 338,5, antebrazo 403,3, muñeca 117,45, pinza 124,82;
 aquí escaladas ×0,28 (el Spot Micro mide ~0,28 veces el Spot). Cadena:
 
-    base (guiñada) -> hombro (cabeceo) -> brazo -> codo (cabeceo) -> antebrazo
+    placa fija -> base (guiñada) -> hombro (cabeceo) -> brazo -> codo (cabeceo) -> antebrazo
     -> muñeca (cabeceo) -> cabeza con pinza, cámara y el LiDAR encima
 
 Como en las fotos: zócalo negro acampanado, hombro de dos tambores negros con estrías, brazo
@@ -103,13 +103,15 @@ class SpotArm:
         fz = FORE[2]
         G = 1.6 * GRIPPER  # algo más larga que la escala exacta, como se ve en las fotos
         self.parts = {
-            "base": [  # zócalo hundido en el lomo (pegado a la carcasa) y torreta
+            "plinth": [  # placa hundida en el lomo: va fija a la carcasa, no gira
                 (_prism(pv, [(-0.040, -0.008), (0.040, -0.008), (0.032, 0.014), (-0.032, 0.014)],
                         -0.034, 0.034), BLACK),
-                (pv.Cylinder(center=(0, 0, 0.022), direction=(0, 0, 1), radius=0.028, height=0.018,
-                             resolution=56), DARK),
                 (pv.Cylinder(center=(0, 0, 0.0145), direction=(0, 0, 1), radius=0.031, height=0.003,
                              resolution=56), GREY),                                     # aro de giro
+            ],
+            "base": [  # torreta: lo que gira encima de la placa
+                (pv.Cylinder(center=(0, 0, 0.022), direction=(0, 0, 1), radius=0.028, height=0.018,
+                             resolution=56), DARK),
             ],
             "shoulder": [*_drum(pv, (0, 0.0175, 0), 0.026, 0.024), *_drum(pv, (0, -0.0175, 0), 0.026, 0.024)],
             "arm": [  # brazo negro aplanado con franja amarilla en el costado
@@ -177,12 +179,13 @@ class SpotArm:
     def transforms(self, body_tf):
         """Matriz 4x4 (mundo) de cada eslabón, dada la del cuerpo. Ángulos positivos suben."""
         q = self.pose
-        base = body_tf @ _tf(_rot_z(q["yaw"]), MOUNT)
+        plinth = body_tf @ _tf(p=MOUNT)  # fija al cuerpo
+        base = plinth @ _tf(_rot_z(q["yaw"]))
         shoulder = base @ _tf(p=(0, 0, SHOULDER_UP))
         arm = shoulder @ _tf(_rot_y(-q["shoulder"]))
         fore = arm @ _tf(_rot_y(-q["elbow"]), (UPPER, 0, 0))
         head = fore @ _tf(_rot_y(-q["wrist"]), FORE)  # wrist = -(hombro + codo): cabeza nivelada
-        return {"base": base, "shoulder": shoulder, "arm": arm, "forearm": fore, "head": head}
+        return {"plinth": plinth, "base": base, "shoulder": shoulder, "arm": arm, "forearm": fore, "head": head}
 
     def lidar_origin(self, body_tf):
         """Posición del LiDAR (mundo)."""
