@@ -18,6 +18,12 @@ venv/
 .DS_Store
 Thumbs.db
 
+# Datos de FlyWire (~130 MB, se bajan con desktop/fly_brain/download_data.py)
+desktop/fly_brain/data/
+
+# Cuevas escaneadas por el simulador (spot_brain.py, botón "Detener escaneo")
+desktop/scans/
+
 # Modelos CAD pesados (se convierten con desktop/models/build_model.py)
 *.stl
 *.step

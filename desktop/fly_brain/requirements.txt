@@ -1,0 +1,9 @@
+numpy>=1.24
+scipy>=1.10
+pandas>=2.0
+pyarrow>=14
+numba>=0.59
+pyvista>=0.44        # visor 3D (spot_brain.py)
+imageio-ffmpeg>=0.5  # grabar vídeo con spot_brain.py --record x.mp4
+# Opcional, GPU NVIDIA: pip install "cupy-cuda12x[ctk]"
+# Opcional, validar contra el original: pip install brian2 joblib
