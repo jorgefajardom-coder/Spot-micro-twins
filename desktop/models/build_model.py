@@ -1,6 +1,8 @@
 """Convierte el STL completo del SpotMicro (exportado de Fusion) en piezas por hueso.
 
     python models/build_model.py "C:/ruta/SPOT MICRO.stl"
+    python models/build_model.py "C:/ruta/SPOT MICRO.stl" --hd     # x12 caras -> spot_model_hd.npz
+    python models/build_model.py "C:/ruta/SPOT MICRO.stl" --full   # sin simplificar -> spot_model_hd.npz
 
 Pasos:
   1. Lee el STL binario con sus colores por cara (formato COLOR= de Fusion/Materialise).
@@ -12,6 +14,7 @@ Pasos:
 Si el CAD cambia, basta con volver a exportar el STL y correr este script.
 """
 
+import argparse
 import os
 import struct
 import sys
@@ -24,6 +27,7 @@ sys.path.insert(0, os.path.dirname(HERE))
 from spot_model3d import solve_skeleton  # noqa: E402
 
 OUT = os.path.join(HERE, "spot_model.npz")
+OUT_HD = os.path.join(HERE, "spot_model_hd.npz")
 
 # --- CAD -> robot -----------------------------------------------------------------
 # En el ensamble de Fusion: +Y = adelante, -X = izquierda, Z = arriba, milímetros.
@@ -33,6 +37,10 @@ CAD_FLOOR_Z = 236.3                          # z del punto más bajo de los pies
 # Presupuesto de caras (matplotlib dibuja fluido hasta ~6-8k caras por robot)
 FACES_BODY = 6000
 FACES_BONE = {"shoulder": 800, "upper": 1400, "lower": 1200}
+# Distancia máxima (m) de una pieza al segmento de su hueso; más lejos se queda en el cuerpo
+MAX_BONE_DIST = 0.035
+# --hd: para el visor VTK (spot_brain.py), que mueve cientos de miles de caras sin problema
+HD_SCALE = 12
 
 
 def load_colored_stl(path):
@@ -128,8 +136,8 @@ def pack(tris_local, cols, max_faces):
     return v[used].astype(np.float32), remap.reshape(-1, 3).astype(np.int32), (c * 255).astype(np.uint8)
 
 
-def main(stl_path):
-    from spotmicro_gui import Kinematics
+def main(stl_path, out_path=OUT, scale=1):
+    from kinematics import Kinematics
 
     print("Leyendo", stl_path)
     tris_cad, cols = load_colored_stl(stl_path)
@@ -175,6 +183,10 @@ def main(stl_path):
                 d = seg_dist(ctr, a, b)
                 if d < best:
                     best, key = d, f"{leg}_{bone}"
+        # Las piezas de las patas están a <2 cm de su hueso. Más lejos es carcasa del cuerpo
+        # (p. ej. la tira lateral negra o tornillos del lateral), que no debe moverse con la pata.
+        if best > MAX_BONE_DIST:
+            key = "body"
         groups[key].append(sel)
 
     out = {}
@@ -183,18 +195,18 @@ def main(stl_path):
             continue
         if key == "body":
             r, p = skel["body"]
-            budget = FACES_BODY
+            budget = None if scale is None else FACES_BODY * scale
         else:
             leg, bone = key.split("_")
             r, p = skel["legs"][int(leg)][bone]
-            budget = FACES_BONE[bone]
+            budget = None if scale is None else FACES_BONE[bone] * scale
         # Cada sólido se reduce por separado: nunca fusionar carcasas o tornillos
         # vecinos, ni eliminar piezas pequeñas por tamaño.
         weights = np.sqrt([len(sel) for sel in sels])
         vs, fs, cs, offset = [], [], [], 0
         for sel, weight in zip(sels, weights):
             local = (tris[sel] - p) @ r
-            target = max(24, int(budget * weight / weights.sum()))
+            target = 10**9 if budget is None else max(24, int(budget * weight / weights.sum()))
             v, f, c = pack(local, cols[sel], target)
             vs.append(v); fs.append(f + offset); cs.append(c)
             offset += len(v)
@@ -202,11 +214,17 @@ def main(stl_path):
         out[f"{key}_v"], out[f"{key}_f"], out[f"{key}_c"] = v, f, c
         print(f"  {key:12s} {sum(map(len, sels)):7d} -> {len(f):5d} caras ({len(sels)} piezas)")
     print(f"  conservadas {len(ids)} piezas del STL")
-    np.savez_compressed(OUT, **out)
-    print("Guardado", OUT, f"({os.path.getsize(OUT) / 1024:.0f} KB)")
+    np.savez_compressed(out_path, **out)
+    print("Guardado", out_path, f"({os.path.getsize(out_path) / 1024:.0f} KB)")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        sys.exit(__doc__)
-    main(sys.argv[1])
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    ap.add_argument("stl")
+    ap.add_argument("--hd", action="store_true", help=f"x{HD_SCALE} caras -> spot_model_hd.npz")
+    ap.add_argument("--full", action="store_true", help="todas las caras del STL -> spot_model_hd.npz")
+    args = ap.parse_args()
+    if args.full:
+        main(args.stl, OUT_HD, scale=None)
+    else:
+        main(args.stl, OUT_HD if args.hd else OUT, HD_SCALE if args.hd else 1)
