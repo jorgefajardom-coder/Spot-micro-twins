@@ -24,7 +24,7 @@ UPPER = 0.3385 * SCALE                    # m, hombro -> codo
 FORE = np.array([0.4033 * SCALE, 0.0, 0.026])  # m, codo -> muñeca (el tramo negro sube un poco)
 WRIST = 0.11745 * SCALE                   # m, muñeca -> cabeza
 GRIPPER = 0.12482 * SCALE                 # m, largo de la pinza
-MOUNT = np.array([0.060, 0.0, 0.025])     # m, sobre la parte plana del lomo, hacia delante
+MOUNT = np.array([0.005, 0.0, 0.0388])    # m, centro del bloque central (la parte más gruesa), sobre sus dos nervios
 SHOULDER_UP = 0.048                       # m, eje del hombro sobre la base
 # Postura de las fotos: brazo casi vertical, antebrazo hacia delante y abajo, cabeza nivelada
 POSE = {"yaw": 0.0, "shoulder": 74.0, "elbow": -112.0, "wrist": 38.0}  # grados
@@ -103,14 +103,14 @@ class SpotArm:
         fz = FORE[2]
         G = 1.6 * GRIPPER  # algo más larga que la escala exacta, como se ve en las fotos
         self.parts = {
-            "plinth": [  # placa hundida en el lomo: va fija a la carcasa, no gira
-                (_prism(pv, [(-0.040, -0.008), (0.040, -0.008), (0.032, 0.014), (-0.032, 0.014)],
-                        -0.034, 0.034), BLACK),
-                (pv.Cylinder(center=(0, 0, 0.0145), direction=(0, 0, 1), radius=0.031, height=0.003,
+            "plinth": [  # placa apoyada sobre la tapa: fija a la carcasa, no gira ni la atraviesa
+                (_prism(pv, [(-0.028, 0.0), (0.028, 0.0), (0.024, 0.010), (-0.024, 0.010)],
+                        -0.023, 0.023), BLACK),
+                (pv.Cylinder(center=(0, 0, 0.0115), direction=(0, 0, 1), radius=0.0215, height=0.003,
                              resolution=56), GREY),                                     # aro de giro
             ],
             "base": [  # torreta: lo que gira encima de la placa
-                (pv.Cylinder(center=(0, 0, 0.022), direction=(0, 0, 1), radius=0.028, height=0.018,
+                (pv.Cylinder(center=(0, 0, 0.0215), direction=(0, 0, 1), radius=0.021, height=0.017,
                              resolution=56), DARK),
             ],
             "shoulder": [*_drum(pv, (0, 0.0175, 0), 0.026, 0.024), *_drum(pv, (0, -0.0175, 0), 0.026, 0.024)],
