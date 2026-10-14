@@ -465,6 +465,7 @@ class BrainViewer:
         self.last = time.perf_counter()
         self.last_dt = 0.04
         self.t = 0.0
+        self.sim_t = 0.0
         self.hist_t, self.hist, self.hist_lines = [], {}, {}
         self.scanning = True
         self.off_screen = off_screen
@@ -546,7 +547,7 @@ class BrainViewer:
                      specular=0.35, specular_power=25)
         mesh = lambda p: part_mesh(pv, *p, smooth=not hd)  # noqa: E731
         self.body_actors = [pl.add_mesh(mesh(p), **style) for p in model.body]
-        # Brazo con cabeza (models/arm_mod, si está descargado) y el LiDAR en la cabeza
+        # Brazo con cabeza (estilo Spot Arm) y el LiDAR en la cabeza
         self.arm, self.arm_actors = None, {}
         if spot_arm.available():
             self.arm = spot_arm.SpotArm(pv)
@@ -554,9 +555,7 @@ class BrainViewer:
                 self.arm_actors[link] = [pl.add_mesh(m, color=col, smooth_shading=True, ambient=0.25,
                                                      diffuse=0.8, specular=0.35, specular_power=25)
                                          for m, col in parts]
-            level = transform(np.eye(3), [0, 0, BODY_HEIGHT])
-            lo = self.arm.lidar_origin(level)
-            w.lidar_mount = (float(lo[0]), float(lo[2] - BODY_HEIGHT))
+            self._aim_lidar(0.0)
         self.leg_actors = [{bone: [pl.add_mesh(mesh(p), **style) for p in model.legs[leg][bone]]
                             for bone in BONES} for leg in range(4)]
 
@@ -806,6 +805,11 @@ class BrainViewer:
             self.heat_seen = False
             self.map_gas.visibility = self.map_heat.visibility = False
 
+    def _aim_lidar(self, t):
+        """El LiDAR va en la cabeza: su posición respecto al cuerpo sigue al brazo."""
+        lo = self.arm.lidar_origin(transform(np.eye(3), [0, 0, BODY_HEIGHT]))
+        self.world.lidar_mount = (float(lo[0]), float(lo[1]), float(lo[2] - BODY_HEIGHT))
+
     def _body_velocity(self):
         p = self.gait.gait_parameters[self.gait.active_gait]
         v = p["step_length"] / (p["duty_factor"] * p["cycle_time"]) * self.gait.gait_speed
@@ -818,6 +822,10 @@ class BrainViewer:
         self.last_dt = dt
         w = self.world
         w.update(dt, self._body_velocity())
+        self.sim_t += dt
+        if self.arm is not None:
+            self.arm.look(self.sim_t)  # la cabeza mira alrededor
+            self._aim_lidar(self.sim_t)
         w.lidar_scan(BODY_HEIGHT + float(w.ground(w.pose[0], w.pose[1])))
         bearing, dist, looming, loom_bearing, self.readings = w.senses()
         self.cmd = self.pilot.step(self.Senses(bearing, dist, looming, loom_bearing), ms=dt * 1000.0)

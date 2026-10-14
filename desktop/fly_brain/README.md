@@ -62,16 +62,14 @@ oclusión ambiental).
 
 ### Brazo con cabeza y LiDAR
 
-Si están las piezas del brazo de [Meddodan/ARM_MOD](https://github.com/Meddodan/ARM_MOD)
-en `desktop/models/arm_mod/` (no se suben: el repositorio no publica licencia), el
-Spot lleva sobre el lomo la base giratoria, el brazo, el antebrazo y la cabeza
-(`../spot_arm.py`, con los ejes de cada articulación medidos en las piezas), y el
-LiDAR va montado en la cabeza: escanea desde ahí, ~0,28 m por delante y ~0,38 m
-sobre el suelo. Para descargarlas:
-
-```bash
-for f in "Arm 1" "Arm 1B" "Base Motor Support" "Cover_TOP" "Forward Arm A" "Forward Arm B" "Front_Inner_Shoulder" "Head A" "Head B" "Head C" "Rotating Base"; do curl -sSfL -o "../models/arm_mod/$f.stl" "https://raw.githubusercontent.com/Meddodan/ARM_MOD/HEAD/${f// /%20}.stl"; done
-```
+El Spot lleva un brazo al estilo del Spot Arm de Boston Dynamics, con sus
+proporciones (brazo 338,5 mm, antebrazo 403,3, muñeca 117,45, pinza 124,82)
+escaladas ×0,28 al Spot Micro (`../spot_arm.py`): base negra que gira, hombro,
+brazo amarillo, codo con su tramo negro doblado, antebrazo, muñeca y una cabeza con
+pinza y cámara. El LiDAR va encima de la cabeza (~0,37 m sobre el suelo) y la
+cabeza **mira alrededor**: la base barre ±65° cada 9 s y la muñeca la mantiene
+nivelada con un leve cabeceo; el LiDAR escanea desde donde está la cabeza en cada
+momento.
 
 ## Misión en la cueva: gas, calor, terreno y LiDAR
 
