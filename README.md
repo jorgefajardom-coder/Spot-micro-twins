@@ -200,7 +200,8 @@ fuga de gas con el circuito de persecución de la mosca, rodea las fuentes de ca
 huye de las amenazas con la Giant Fiber. Lleva un **brazo al estilo del Spot Arm**
 con el **LiDAR 360° en la cabeza**, que mira alrededor y reconstruye la cueva en 3D
 mientras avanza. Explicación completa en
-[`desktop/fly_brain/README.md`](desktop/fly_brain/README.md).
+[`desktop/fly_brain/README.md`](desktop/fly_brain/README.md) (v2; la versión anterior está en
+[`README_v1.md`](desktop/fly_brain/README_v1.md)).
 
 ![Spot Micro con cerebro de mosca en la cueva](docs/assets/spot_brain.gif)
 
