@@ -492,6 +492,7 @@ class BrainViewer:
         self.last_dt = 0.04
         self.t = 0.0
         self.sim_t = 0.0
+        self.last_feet = np.array(self.gait.step(0.0))  # postura inicial (el LiDAR sale de la cabeza ya)
         self.hist_t, self.hist, self.hist_lines = [], {}, {}
         self.scanning = True
         self.off_screen = off_screen
@@ -582,7 +583,6 @@ class BrainViewer:
                 self.arm_actors[link] = [pl.add_mesh(m, color=col, **{k: v for k, v in style.items()
                                                                       if k not in ("scalars", "rgb")})
                                          for m, col in parts]
-            self._aim_lidar(0.0)
         self.leg_actors = [{bone: [pl.add_mesh(mesh(p), **style) for p in model.legs[leg][bone]]
                             for bone in BONES} for leg in range(4)]
 
@@ -839,10 +839,15 @@ class BrainViewer:
             self.heat_seen = False
             self.map_gas.visibility = self.map_heat.visibility = False
 
-    def _aim_lidar(self, t):
-        """El LiDAR va en la cabeza: su posición respecto al cuerpo sigue al brazo."""
-        lo = self.arm.lidar_origin(transform(np.eye(3), [0, 0, BODY_HEIGHT]))
-        self.world.lidar_mount = (float(lo[0]), float(lo[1]), float(lo[2] - BODY_HEIGHT))
+    def _body_pose(self, feet):
+        """Pose real del robot en el mundo (la misma que se dibuja): pies sobre el terreno,
+        cuerpo inclinado y esqueleto."""
+        w = self.world
+        c, s = math.cos(w.pose[2]), math.sin(w.pose[2])
+        rz = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+        feet_w, rpy, body = w.body_on_terrain(feet @ rz.T + [w.pose[0], w.pose[1], 0], BODY_HEIGHT)
+        skel = solve_skeleton(self.kin, feet_w.tolist(), rpy, body.tolist())
+        return skel, body
 
     def _body_velocity(self):
         p = self.gait.gait_parameters[self.gait.active_gait]
@@ -857,10 +862,14 @@ class BrainViewer:
         w = self.world
         w.update(dt, self._body_velocity())
         self.sim_t += dt
+        origin = None
         if self.arm is not None:
             self.arm.look(self.sim_t)  # la cabeza mira alrededor
-            self._aim_lidar(self.sim_t)
-        w.lidar_scan(BODY_HEIGHT + float(w.ground(w.pose[0], w.pose[1])))
+            if self.last_feet is not None:
+                # El LiDAR dispara desde la cabeza tal como se dibuja: cuerpo inclinado y brazo
+                skel, _ = self._body_pose(self.last_feet)
+                origin = self.arm.lidar_origin(transform(*skel["body"]))
+        w.lidar_scan(BODY_HEIGHT + float(w.ground(w.pose[0], w.pose[1])), origin=origin)
         bearing, dist, looming, loom_bearing, self.readings = w.senses()
         self.cmd = self.pilot.step(self.Senses(bearing, dist, looming, loom_bearing), ms=dt * 1000.0)
         self.gait.set_command(self.cmd.vx, 0.0, self.cmd.wz)
@@ -868,7 +877,8 @@ class BrainViewer:
         spikes = self.pilot.last_counts
         self.activity *= math.exp(-dt * 1000.0 / ACTIVITY_TAU_MS)
         self.activity = np.minimum(1.0, self.activity + 0.5 * spikes).astype(np.float32)
-        return np.array(self.gait.step(dt))
+        self.last_feet = np.array(self.gait.step(dt))
+        return self.last_feet
 
     # ----- dibujo -----
     def draw(self, feet):
@@ -880,10 +890,7 @@ class BrainViewer:
 
     def _draw_robot(self, feet):
         pl, w = self.pl, self.world
-        c, s = math.cos(w.pose[2]), math.sin(w.pose[2])
-        rz = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
-        feet_w, rpy, body = w.body_on_terrain(feet @ rz.T + [w.pose[0], w.pose[1], 0], BODY_HEIGHT)
-        skel = solve_skeleton(self.kin, feet_w.tolist(), rpy, body.tolist())
+        skel, body = self._body_pose(feet)
         body_tf = transform(*skel["body"])
         for a in self.body_actors:
             a.user_matrix = body_tf

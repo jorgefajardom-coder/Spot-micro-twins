@@ -408,15 +408,18 @@ class CaveWorld:
         return self.cave.floor(x, y) + self.terrain.height(x, y)
 
     # ----- LiDAR -----
-    def lidar_scan(self, body_z):
-        """Una vuelta del LiDAR: puntos de impacto (mundo) y distancias por rayo."""
+    def lidar_scan(self, body_z, origin=None):
+        """Una vuelta del LiDAR: puntos de impacto (mundo) y distancias por rayo. origin: posición
+        exacta del sensor (la cabeza del brazo en el visor); si no, lidar_mount sobre el cuerpo."""
         az = np.linspace(-np.pi, np.pi, LIDAR_AZIMUTHS, endpoint=False) + self.pose[2]
         A, E = np.meshgrid(az, LIDAR_ELEVATIONS, indexing="ij")
         dirs = np.column_stack([(np.cos(E) * np.cos(A)).ravel(), (np.cos(E) * np.sin(A)).ravel(),
                                 np.sin(E).ravel()])
-        fwd, side, up = self.lidar_mount
-        c, s_ = np.cos(self.pose[2]), np.sin(self.pose[2])
-        origin = np.array([self.pose[0] + fwd * c - side * s_, self.pose[1] + fwd * s_ + side * c, body_z + up])
+        if origin is None:
+            fwd, side, up = self.lidar_mount
+            c, s_ = np.cos(self.pose[2]), np.sin(self.pose[2])
+            origin = np.array([self.pose[0] + fwd * c - side * s_, self.pose[1] + fwd * s_ + side * c, body_z + up])
+        self.lidar_origin = np.asarray(origin, float)
         hits, ranges = self.cave.raycast(origin, dirs, self.terrain, LIDAR_RANGE, LIDAR_STEP)
         self.last_scan = (hits, ranges.reshape(LIDAR_AZIMUTHS, len(LIDAR_ELEVATIONS)))
         self._add_to_map(hits[~np.isnan(ranges)])
