@@ -39,6 +39,7 @@ from cave_explorer import (MAP_BG, SCAN_COLORS, Explorer, build_cave_model, grad
 from gait import BODY_HEIGHT, GaitManager  # noqa: E402
 from kinematics import Kinematics  # noqa: E402
 from sim_world import TEMP_AVOID, CaveWorld, RealCave  # noqa: E402
+import spot_arm  # noqa: E402
 from spot_model3d import BONES, DEFAULT_MODEL_FILE, SpotModel, solve_skeleton  # noqa: E402
 
 # Modelo de alta resolución (models/build_model.py --full); si no existe, el ligero
@@ -545,6 +546,17 @@ class BrainViewer:
                      specular=0.35, specular_power=25)
         mesh = lambda p: part_mesh(pv, *p, smooth=not hd)  # noqa: E731
         self.body_actors = [pl.add_mesh(mesh(p), **style) for p in model.body]
+        # Brazo con cabeza (models/arm_mod, si está descargado) y el LiDAR en la cabeza
+        self.arm, self.arm_actors = None, {}
+        if spot_arm.available():
+            self.arm = spot_arm.SpotArm(pv)
+            for link, parts in self.arm.parts.items():
+                self.arm_actors[link] = [pl.add_mesh(m, color=col, smooth_shading=True, ambient=0.25,
+                                                     diffuse=0.8, specular=0.35, specular_power=25)
+                                         for m, col in parts]
+            level = transform(np.eye(3), [0, 0, BODY_HEIGHT])
+            lo = self.arm.lidar_origin(level)
+            w.lidar_mount = (float(lo[0]), float(lo[2] - BODY_HEIGHT))
         self.leg_actors = [{bone: [pl.add_mesh(mesh(p), **style) for p in model.legs[leg][bone]]
                             for bone in BONES} for leg in range(4)]
 
@@ -830,8 +842,13 @@ class BrainViewer:
         rz = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
         feet_w, rpy, body = w.body_on_terrain(feet @ rz.T + [w.pose[0], w.pose[1], 0], BODY_HEIGHT)
         skel = solve_skeleton(self.kin, feet_w.tolist(), rpy, body.tolist())
+        body_tf = transform(*skel["body"])
         for a in self.body_actors:
-            a.user_matrix = transform(*skel["body"])
+            a.user_matrix = body_tf
+        if self.arm is not None:
+            for link, m in self.arm.transforms(body_tf).items():
+                for a in self.arm_actors[link]:
+                    a.user_matrix = m
         for leg, bones in enumerate(skel["legs"]):
             for bone in BONES:
                 for a in self.leg_actors[leg][bone]:

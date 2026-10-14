@@ -368,6 +368,7 @@ class CaveWorld:
         normal = np.array([-t[1], t[0]])
         self.heat_xy = c + normal * (r + 0.3 if real else 0.3)
         self.obstacle = None
+        self.lidar_mount = (0.0, LIDAR_HEIGHT)  # (adelante, arriba) respecto al centro del cuerpo
         self.reset_robot()
 
     def reset_robot(self):
@@ -406,7 +407,9 @@ class CaveWorld:
         A, E = np.meshgrid(az, LIDAR_ELEVATIONS, indexing="ij")
         dirs = np.column_stack([(np.cos(E) * np.cos(A)).ravel(), (np.cos(E) * np.sin(A)).ravel(),
                                 np.sin(E).ravel()])
-        origin = np.array([self.pose[0], self.pose[1], body_z + LIDAR_HEIGHT])
+        fwd, up = self.lidar_mount
+        c, s_ = np.cos(self.pose[2]), np.sin(self.pose[2])
+        origin = np.array([self.pose[0] + fwd * c, self.pose[1] + fwd * s_, body_z + up])
         hits, ranges = self.cave.raycast(origin, dirs, self.terrain, LIDAR_RANGE, LIDAR_STEP)
         self.last_scan = (hits, ranges.reshape(LIDAR_AZIMUTHS, len(LIDAR_ELEVATIONS)))
         self._add_to_map(hits[~np.isnan(ranges)])

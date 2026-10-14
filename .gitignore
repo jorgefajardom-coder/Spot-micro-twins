@@ -32,3 +32,5 @@ desktop/scans/
 # Cuevas reales descargadas (caves/real_cave.py las baja; licencias de sus autores)
 desktop/caves/karst/
 desktop/caves/Mescla.*
+# Brazo de Meddodan/ARM_MOD (sin licencia publicada; spot_arm.py lo usa si está)
+desktop/models/arm_mod/
