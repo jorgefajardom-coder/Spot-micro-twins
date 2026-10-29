@@ -294,11 +294,6 @@ Same protocol as V5 plus `cmd:ping` for the fail-safe.
 **Organization**
 - Credentials out of the code (`secrets.h`), `servos` / `imu` / `comms` / `leds` modules, `platformio.ini` with pinned versions and a GitHub CI that builds every push.
 
-### To do
-
-- Store the IMU offsets in NVS (`Preferences`) so there is no need to recalibrate on every boot.
-- Finish splitting the GUI into modules (`kinematics.py` and `gait.py` are done; `gui.py`, communication… remain).
-
 ---
 
 ## Credits
@@ -618,11 +613,6 @@ Mismo protocolo que V5 más `cmd:ping` para el fail-safe.
 
 **Organización**
 - Credenciales fuera del código (`secrets.h`), módulos `servos` / `imu` / `comms` / `leds`, `platformio.ini` con versiones fijadas y CI de GitHub que compila cada push.
-
-### Pendiente
-
-- Guardar offsets del IMU en NVS (`Preferences`) para no recalibrar en cada arranque.
-- Terminar de separar la GUI en módulos (ya están `kinematics.py` y `gait.py`; falta `gui.py`, comunicación…).
 
 ---
 
