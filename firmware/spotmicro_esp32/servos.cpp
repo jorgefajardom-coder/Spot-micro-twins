@@ -9,6 +9,7 @@ Adafruit_PWMServoDriver pwm(cfg::PCA9685_ADDR);
 
 // 0xFFFF = canal nunca escrito, fuerza la primera escritura.
 uint16_t last_pulse[cfg::NUM_SERVOS];
+bool is_active = false;
 
 uint16_t angleToPulse(float angle) {
   angle = constrain(angle, 0.0f, 180.0f);
@@ -34,7 +35,10 @@ void setAll(const float (&angles)[cfg::NUM_SERVOS]) {
     last_pulse[ch] = pulse;
     written++;
   }
-  if (written) leds::markActivity(leds::Activity::Pca);
+  if (written) {
+    is_active = true;
+    leds::markActivity(leds::Activity::Pca);
+  }
 
 #if SPOT_DEBUG
   for (uint8_t leg = 0; leg < cfg::NUM_LEGS; leg++) {
@@ -44,5 +48,7 @@ void setAll(const float (&angles)[cfg::NUM_SERVOS]) {
   LOGD("  (%u canales escritos)\n", written);
 #endif
 }
+
+bool active() { return is_active; }
 
 }  // namespace servos

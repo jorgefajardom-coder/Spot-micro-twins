@@ -16,6 +16,8 @@ WebsocketsClient client;
 bool is_connected = false;
 bool mpu_stream = false;
 uint32_t last_stream = 0;
+uint32_t last_rx = 0;  // último mensaje recibido, para el fail-safe
+bool failsafe = false;
 
 // ----- Envío -----
 
@@ -120,6 +122,8 @@ void setMpuStream(bool on, bool ack) {
 }
 
 void handleCommand(const char* cmd) {
+  // Heartbeat de la GUI: solo renueva last_rx, sin respuesta para no llenar el socket
+  if (!strcmp(cmd, "ping")) return;
   LOGI("Comando: %s\n", cmd);
   constexpr char SET_OFFSETS[] = "set_offsets:";
 
@@ -173,6 +177,11 @@ void handleJson(const char* data, size_t len) {
 
 void onMessage(WebsocketsMessage msg) {
   if (!msg.isText()) return;
+  last_rx = millis();
+  if (failsafe) {
+    failsafe = false;
+    LOGI("Fail-safe: comunicación recuperada\n");
+  }
   leds::markActivity(leds::Activity::Receiving);
 
   const auto& payload = msg.data();
@@ -199,6 +208,14 @@ void setConnected(bool c) {
   LOGI(c ? "WebSocket CONECTADO\n" : "WebSocket DESCONECTADO\n");
 }
 
+// Sin mensajes (GUI cerrada, WiFi caído, socket colgado): el robot se queda estático en
+// la última pose recibida, con los servos haciendo fuerza, hasta que vuelva un comando.
+void checkFailsafe() {
+  if (failsafe || !servos::active() || millis() - last_rx < cfg::FAILSAFE_TIMEOUT_MS) return;
+  failsafe = true;
+  LOGI("Fail-safe: %u ms sin comandos, mantengo la última pose\n", cfg::FAILSAFE_TIMEOUT_MS);
+}
+
 }  // namespace
 
 void begin() {
@@ -216,10 +233,12 @@ void loop() {
     mpu_stream = false;
     client.onMessage(onMessage);
     client.onEvent(onEvent);
+    last_rx = millis();
     setConnected(client.available());
     if (is_connected) sendStatus("Conectado al ESP32");
   }
 
+  checkFailsafe();
   if (!is_connected) return;
   if (!client.available()) {
     setConnected(false);

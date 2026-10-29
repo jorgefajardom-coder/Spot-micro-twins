@@ -86,6 +86,29 @@ class ServoCommands(unittest.TestCase):
         self.assertIsNotNone(self.app.get_calibrated_angles_for_esp32(angles))
 
 
+class FailsafeHeartbeat(unittest.TestCase):
+    def test_ping_only_while_sending_and_connected(self):
+        for enabled, connected, sent in [(True, True, True), (False, True, False),
+                                         (True, False, False)]:
+            with self.subTest(enabled=enabled, connected=connected):
+                socket = Mock()
+                with patch.object(gui, 'send_to_esp32_flag', variable(enabled), create=True), \
+                        patch.object(gui, 'ws', socket), patch.object(gui, 'ws_connected', connected), \
+                        patch.object(gui, 'connect_ws') as connect:
+                    self.assertEqual(gui.send_heartbeat(), sent)
+                connect.assert_not_called()
+                if sent:
+                    socket.send.assert_called_once_with('cmd:ping')
+                else:
+                    socket.send.assert_not_called()
+
+    def test_heartbeat_faster_than_esp32_timeout(self):
+        config = (Path(__file__).resolve().parents[2] /
+                  'firmware/spotmicro_esp32/config.h').read_text(encoding='utf-8')
+        timeout = int(config.split('FAILSAFE_TIMEOUT_MS =')[1].split(';')[0])
+        self.assertLessEqual(gui.HEARTBEAT_MS * 3, timeout)
+
+
 class ImuResponses(unittest.TestCase):
     def test_command_starts_receiver_without_enabling_telemetry(self):
         socket, handler = Mock(), Mock()
