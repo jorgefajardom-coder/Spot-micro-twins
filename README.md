@@ -4,15 +4,334 @@
 
 <h1 align="center">Spot Micro Twins</h1>
 
-<p align="center"><em>“La lealtad de un perro, la precisión de un robot.”</em></p>
+<p align="center">
+  <a href="#english"><b>English</b></a> · <a href="#español"><b>Español</b></a>
+</p>
 
 <p align="center">
-  <img src="docs/assets/spotmicro-foto.jpg" alt="Prototipo físico del SpotMicro" width="720"><br>
-  <sub>Prototipo físico del robot cuadrúpedo basado en el repositorio open-source
+  <img src="docs/assets/spotmicro-foto.jpg" alt="Physical SpotMicro prototype" width="720"><br>
+  <sub>Physical prototype of the quadruped robot based on the open-source repository
   <a href="https://gitlab.com/public-open-source/spotmicroai/3dprinting">SpotMicroAI (3D Printing)</a>.</sub>
 </p>
 
 ---
+
+# English
+
+<p align="right"><a href="#español">Leer en español ↓</a></p>
+
+<p align="center"><em>“The loyalty of a dog, the precision of a robot.”</em></p>
+
+## Description
+
+- Zoomorphic robot that mimics the locomotion of a four-legged mammal.
+- Yellow finish for teaching demonstrations.
+- MPU6050 gyroscope for stability on uneven terrain.
+- Durable, high-quality 3D printing.
+- Rubber caps on the feet for better traction.
+
+## Technical specifications
+
+| | |
+|---|---|
+| **Speed** | 10 m/h, constant (intentionally low: it gives the LiDAR time to map the cave optimally) |
+| **Force** | 40 kg |
+| **Structure** | 3D printed |
+| **Capability** | Climbs stairs and moves over uneven terrain |
+| **Features** | Highly adaptable |
+| **Surfaces** | Optimal for complex, uneven surfaces |
+
+## Mechanical design
+
+<p align="center">
+  <img src="docs/assets/spotmicro-plano.jpg" alt="Top view: body, electronics and 4 legs" width="640">
+</p>
+
+- 4 articulated legs, 3 degrees of freedom per leg (**12 DoF**).
+- Structural parts printed in **PETG/PLA**.
+- **TD8120MG 20 kg·cm metal-gear servos** for the main joints.
+- Geometry inspired by the morphology of real quadrupeds.
+- Rubber caps on the feet for better grip.
+
+## Electronics
+
+- **ESP32** as the main controller (processing + WiFi/Bluetooth).
+- **16-channel PCA9685** for precise servo PWM.
+- **MPU6050** (gyroscope + accelerometer) for stability and balance.
+- Expansion board to keep the signals organized.
+- 12 V switching power supply as the main power source.
+
+```mermaid
+flowchart LR
+    GUI[Python GUI] -- "JSON angles · cmd:*" --> ESP[ESP32]
+    ESP -- "IMU telemetry · status" --> GUI
+    ESP -- I2C --> PCA[PCA9685] --> S[12 TD8120MG servos]
+    MPU[MPU6050] -- I2C --> ESP
+```
+
+| Connection | Detail |
+|---|---|
+| PCA9685 | I2C, address **0x42**, channels 0–11 = 4 legs × 3 joints |
+| MPU6050 | I2C, address 0x68 (SDA 21, SCL 22) |
+| Status LEDs | WiFi 16 · WebSocket 17 · sending 18 · receiving 27 · PCA 26 |
+
+All pins and constants live in [`firmware/spotmicro_esp32/config.h`](firmware/spotmicro_esp32/config.h).
+
+## Electrical specifications
+
+| Component | V min | V max | V nominal | Current | Power |
+|---|---|---|---|---|---|
+| TD8120MG servo (20 kg) | 4.8 V | 7.4 V | 6.4 V | 1–2 A (3 A peak) | 6.4–12.8 W |
+| PCA9685 | 2.3 V | 5.5 V | 5 V | 10–30 mA | < 0.2 W |
+| Expansion board | 4.8 V | 5.5 V | 5 V | 0.5 A max | 2.5 W |
+| ESP32 | 3.0 V | 3.6 V | 3.3 V | 80–240 mA | 0.8 W |
+| MPU6050 | 2.3 V | 3.4 V | 3.3 V | 3–5 mA | 0.015 W |
+| Power supply | 12 V | 12 V | 12 V | 30 A | 360 W |
+
+## Applications
+
+- Teaching and educational demonstrations.
+- Entertainment and hobby robotics.
+- Research on quadruped locomotion.
+- Testing stability algorithms.
+- Developing robotic control systems.
+
+## Results
+
+- Stable locomotion on flat surfaces at a constant 10 m/h. The speed is intentionally low
+  so the LiDAR has time to map the cave optimally.
+- Payload of up to 2 kg while staying stable.
+- Fast servo response with precise angles.
+- Stable wireless link up to 15 meters away.
+- Can clear obstacles up to 5 cm high.
+- Stability on uneven terrain thanks to the MPU6050.
+
+---
+
+## Code
+
+### Repository layout
+
+| Folder | Contents |
+|---|---|
+| `firmware/spotmicro_esp32/` | **Current firmware (V6)**: modular sketch, builds with PlatformIO or Arduino IDE |
+| `firmware/legacy/` | Historical versions V1–V5 (WiFi credentials removed) |
+| `desktop/spotmicro_gui.py` | Control GUI: inverse kinematics, PID, joystick, routines and gaits |
+| `desktop/kinematics.py` | Headless IK and calibration (used by the GUI, the viewers and external controllers) |
+| `desktop/gait.py` | Gaits with a live command `set_command(vx, vy, turn)` |
+| `desktop/spot_walk.py` | Keyboard-driven gait viewer |
+| `desktop/notebooks/Kinematicsv1.ipynb` | Notebook with the full evolution of the GUI |
+| `calibration/offset-default.json` | Servo offsets used by the GUI |
+| `docs/` | Technical documentation, poster and images |
+
+### Firmware: build and upload
+
+1. Copy `firmware/spotmicro_esp32/secrets.example.h` to `secrets.h` and fill in your WiFi (`secrets.h` is in `.gitignore`).
+2. **PlatformIO** (recommended, installs the libraries for you):
+   ```bash
+   cd firmware
+   pio run -t upload
+   pio device monitor
+   ```
+   `pio run -e esp32dev-debug -t upload` enables per-packet logs.
+3. **Arduino IDE**: open `firmware/spotmicro_esp32/spotmicro_esp32.ino` and install
+   ArduinoWebsockets (gilmaimon), **ArduinoJson 7.x**, Adafruit MPU6050 and Adafruit PWM Servo Driver.
+
+The serial monitor prints the IP. It also answers at `ws://spotmicro.local:81` (mDNS).
+
+### Desktop GUI
+
+On Windows, run `setup_env.bat` once and open **`iniciar_interfaz.bat`**.
+This is the original notebook interface: 3D skeleton, per-leg sliders,
+body position and rotation, calibration, joystick, routines and the
+inverse and differential kinematics tabs. Sending to the ESP32 starts disabled.
+
+You can also start it from a terminal:
+
+```bash
+cd desktop
+pip install -r requirements.txt
+python spotmicro_gui.py
+```
+
+Set `ESP32_IP` at the top of the script to the ESP32's IP (or `spotmicro.local`).
+
+The GUI validates all 12 angles before every send, including the per-servo
+calibration limits, in both the inverse and the differential controls.
+Invalid values block the whole packet; they are not turned into 180°.
+IMU confirmations are shown when the ESP32's reply arrives.
+
+### 3D viewer
+
+This extra app plays the dance with the CAD model; to drive the
+skeleton with sliders, use the desktop GUI described above.
+
+```bash
+python desktop/spot_viewer.py
+python desktop/spot_viewer.py --single
+```
+
+Articulated CAD model with fill lighting, contact shadows and uniform
+scale on all three axes. Drag to rotate and use the wheel to zoom.
+The buttons reset the initial view or switch to side and top views;
+the skeleton, the floor and the triangle mesh can be toggled separately.
+
+![Spot Micro Twins viewer](docs/assets/visor-3d.png)
+
+### Live-command gait
+
+`gait.py` takes forward, lateral and turn commands in [-1, 1] at any moment, so the
+direction can change while walking (GUI sliders, keyboard or an external controller):
+
+```python
+from kinematics import Kinematics
+from gait import GaitManager
+
+gait = GaitManager(Kinematics())
+gait.set_gait("trotting")
+gait.set_command(0.8, 0.0, -0.3)   # walk forward turning right
+feet = gait.step(0.02)             # 4 feet (x, y, z) for the IK
+```
+
+```bash
+python desktop/spot_walk.py   # W/S forward · A/D sideways · Q/E turn · 1/2/3 gait
+python desktop/gait.py --check
+```
+
+### Fly brain
+
+The Spot can be driven by the **whole *Drosophila* brain** (FlyWire connectome,
+138,639 neurons) simulated on the GPU, reproducing the published model by
+Shiu et al. (r = 0.999 neuron by neuron). It explores a **real LiDAR-scanned cave**
+(Grotte de la Sourde, scaled to a mine gallery): it follows the trail of a gas leak
+with the fly's pursuit circuit, steers around heat sources and flees threats with the
+Giant Fiber. It carries a **Spot Arm–style arm** with the **360° LiDAR on its head**,
+which looks around and rebuilds the cave in 3D as it moves. Full explanation in
+[`desktop/fly_brain/README.md`](desktop/fly_brain/README.md) (v2; the previous version is in
+[`README_v1.md`](desktop/fly_brain/README_v1.md)).
+
+![Spot Micro with the fly brain in the cave](docs/assets/spot_brain.gif)
+
+<p align="center">
+  <a href="docs/assets/spot-micro-cueva.mp4">
+    <img src="docs/assets/spot-micro-cueva.gif" alt="Cave rebuilt by the LiDAR and gas leak located" width="720">
+  </a><br>
+  <sub><b>Cave rebuilt by the LiDAR (13 s)</b> · click for the high-quality video</sub>
+</p>
+
+```bash
+cd desktop
+fly_brain\.venv\Scripts\python spot_brain.py
+```
+
+### Hardware-free checks
+
+```bash
+python -m unittest discover -s desktop/tests -v
+python desktop/spot_dance.py --check
+python desktop/gait.py --check
+```
+
+These tests cover angle packets, calibration limits, IMU replies and the dance
+kinematics; they do not replace physical validation on the robot.
+
+### Original ESP32 code
+
+The original integrated sketch is complete in
+[`firmware/legacy/v5_integrated/v5_integrated.ino`](firmware/legacy/v5_integrated/v5_integrated.ino),
+including its `loop()`, and uses the `TU_SSID` and `TU_PASSWORD` placeholders.
+The recommended firmware is still [`firmware/spotmicro_esp32`](firmware/spotmicro_esp32):
+credentials are set only in `secrets.h`, which is excluded from Git.
+
+### WebSocket protocol (port 81)
+
+| Message from the PC | ESP32 reply |
+|---|---|
+| `[a0, …, a11]` (12 angles, 0–180°) | — (moves the servos) |
+| `[[a,b,c], [a,b,c], [a,b,c], [a,b,c]]` (per leg) | — |
+| `{"command":"get_mpu_data"}` or `cmd:get_mpu_data` | telemetry (below) |
+| `cmd:start_mpu_stream` / `cmd:stop_mpu_stream` | `{"status":"MPU stream started/stopped"}` and telemetry at 10 Hz |
+| `cmd:calibrate_imu` | `{"status":"IMU calibrated"}` (robot still and level, ~1 s) |
+| `cmd:reset_imu` | `{"status":"IMU reset"}` |
+| `cmd:get_offsets` | `{"status":"offsets_data","accel_offsets":[…],"gyro_offsets":[…]}` |
+| `cmd:set_offsets:ax,ay,az,gx,gy,gz` | `{"status":"Offsets updated"}` |
+| `cmd:ping` | — (fail-safe heartbeat) |
+| anything invalid | `{"status":"error","error":"…"}` |
+
+**Command-loss fail-safe:** if the ESP32 goes 1 s without receiving any message
+(GUI closed, WiFi down or a hung socket), the robot holds still in the last pose it
+received, with the servos holding torque, and reports it on the serial monitor. When the
+link comes back it continues with the next angle packet. The GUI sends `cmd:ping` every
+200 ms while sending to the ESP32 is enabled, so a still pose does not trigger it. A custom
+controller must send angles or `cmd:ping` at least once per second (`FAILSAFE_TIMEOUT_MS`
+in `config.h`).
+
+```json
+{"sensor":"mpu6050","accel":{"x":0,"y":0,"z":0},"gyro":{"x":0,"y":0,"z":0},
+ "orientation":{"roll":0,"pitch":0,"yaw":0},"temp":25.1,"calibrated":true}
+```
+
+### V6: changes from V5
+
+Same protocol as V5 plus `cmd:ping` for the fail-safe.
+
+**Latency / performance**
+- `server.accept()` blocked the loop until a client arrived; now it is only called when `server.poll()` reports a pending connection.
+- Removed the ~15 `Serial.print` calls per angle packet (at 115200 baud they blocked for several ms). They are still available with `SPOT_DEBUG=1`.
+- No more ack for every angle packet. The GUI does not use it and, if nobody read the socket, the TCP buffer filled up and blocked the ESP32 (`ACK_ANGLE_PACKETS` in `config.h`).
+- `WiFi.setSleep(false)` removes the modem-sleep latency.
+- I2C goes from 100 kHz to 400 kHz, and only channels whose pulse changed are written.
+- The loop goes from `delay(10)` to `delay(1)`, and JSON is serialized into a stack buffer instead of a `String`.
+
+**Fixes**
+- In the roll/pitch complementary filter, V5 integrated the gyroscope in rad/s together with angles in degrees, so the gyro barely counted. The filter now really fuses both and runs at 100 Hz.
+- Angle packets are fully validated before moving: in V5 a non-numeric value became 0° and moved the servo.
+- If the MPU6050 does not respond, the robot keeps working without the IMU (V5 hung in `while(1)`).
+- `set_offsets` with incomplete values is rejected instead of applying zeros.
+- A new client replaces the previous one, useful when the GUI reconnects while an old socket is half open.
+- Fail-safe: after 1 s without messages the robot holds still in the last pose and reports it on the serial monitor.
+
+**Organization**
+- Credentials out of the code (`secrets.h`), `servos` / `imu` / `comms` / `leds` modules, `platformio.ini` with pinned versions and a GitHub CI that builds every push.
+
+### To do
+
+- Store the IMU offsets in NVS (`Preferences`) so there is no need to recalibrate on every boot.
+- Finish splitting the GUI into modules (`kinematics.py` and `gait.py` are done; `gui.py`, communication… remain).
+
+---
+
+## Credits
+
+<table>
+<tr>
+<td>
+
+**Authors:** Profundización II (day program)<br>
+**Organization:** Universitaria Agustiniana<br>
+**Supervising professor:** Raúl Alejandro Barbosa Rodriguez<br>
+**Base repository:** [SpotMicroAI / 3D Printing](https://gitlab.com/public-open-source/spotmicroai/3dprinting)<br>
+**Main components:** ESP32, PCA9685, MPU6050, 20 kg servos, 3D-printed structure
+
+</td>
+<td align="center">
+  <img src="docs/poster/qr.png" alt="QR code of the base project" width="110"><br>
+  <sub>Scan to see the project</sub>
+</td>
+</tr>
+</table>
+
+📄 [Project poster](docs/poster/index.html) · 📘 [Full technical documentation](docs/spotmicrov3_code_documentation_v1.0.0.md)
+
+<p align="right"><a href="#english">Back to top ↑</a> · <a href="#español">Leer en español ↓</a></p>
+
+---
+
+# Español
+
+<p align="right"><a href="#english">Read in English ↑</a></p>
+
+<p align="center"><em>“La lealtad de un perro, la precisión de un robot.”</em></p>
 
 ## Descripción
 
@@ -73,7 +392,8 @@ Todos los pines y constantes están en [`firmware/spotmicro_esp32/config.h`](fir
 
 | Componente | V mín | V máx | V nominal | Corriente | Potencia |
 |---|---|---|---|---|---|
-| Servo TD8120MG (20 kg) | 4.8 V | 7.4 V | 6.4 V | 1–2 A (pico 3 A) | 6.4–12.8 W || PCA9685 | 2.3 V | 5.5 V | 5 V | 10–30 mA | < 0.2 W |
+| Servo TD8120MG (20 kg) | 4.8 V | 7.4 V | 6.4 V | 1–2 A (pico 3 A) | 6.4–12.8 W |
+| PCA9685 | 2.3 V | 5.5 V | 5 V | 10–30 mA | < 0.2 W |
 | Placa expansión | 4.8 V | 5.5 V | 5 V | 0.5 A máx | 2.5 W |
 | ESP32 | 3.0 V | 3.6 V | 3.3 V | 80–240 mA | 0.8 W |
 | MPU6050 | 2.3 V | 3.4 V | 3.3 V | 3–5 mA | 0.015 W |
@@ -205,24 +525,12 @@ mientras avanza. Explicación completa en
 
 ![Spot Micro con cerebro de mosca en la cueva](docs/assets/spot_brain.gif)
 
-<table align="center">
-<tr>
-<td align="center">
-  <a href="docs/assets/spot_micro_mision.mp4">
-    <img src="docs/assets/spot_micro_mision.jpg" alt="Video: Spot Micro explorando la cueva con el cerebro de mosca" height="236">
-  </a><br>
-  <sub><b>Misión en la cueva (30 s)</b></sub>
-</td>
-<td align="center">
+<p align="center">
   <a href="docs/assets/spot-micro-cueva.mp4">
-    <img src="docs/assets/spot-micro-cueva.jpg" alt="Video: cueva reconstruida con el LiDAR y fuga de gas localizada" height="236">
+    <img src="docs/assets/spot-micro-cueva.gif" alt="Cueva reconstruida con el LiDAR y fuga de gas localizada" width="720">
   </a><br>
-  <sub><b>Cueva reconstruida con el LiDAR (13 s)</b></sub>
-</td>
-</tr>
-</table>
-
-<p align="center"><sub>Haz clic en una imagen para ver el video.</sub></p>
+  <sub><b>Cueva reconstruida con el LiDAR (13 s)</b> · haz clic para el video en alta calidad</sub>
+</p>
 
 ```bash
 cd desktop
@@ -267,8 +575,9 @@ las credenciales se configuran únicamente en `secrets.h`, excluido de Git.
 (GUI cerrada, WiFi caído o socket colgado), el robot se queda estático en la última pose
 recibida, con los servos haciendo fuerza, y lo indica en el monitor serie. Al volver la
 comunicación sigue con el siguiente paquete de ángulos. La GUI envía `cmd:ping` cada
-200 ms mientras el envío al ESP32 está activo, así que una pose quieta no lo dispara. Un controlador propio debe enviar ángulos o `cmd:ping`
-al menos cada segundo (`FAILSAFE_TIMEOUT_MS` en `config.h`).
+200 ms mientras el envío al ESP32 está activo, así que una pose quieta no lo dispara. Un
+controlador propio debe enviar ángulos o `cmd:ping` al menos cada segundo
+(`FAILSAFE_TIMEOUT_MS` en `config.h`).
 
 ```json
 {"sensor":"mpu6050","accel":{"x":0,"y":0,"z":0},"gyro":{"x":0,"y":0,"z":0},
@@ -326,3 +635,5 @@ Mismo protocolo que V5 más `cmd:ping` para el fail-safe.
 </table>
 
 📄 [Póster del proyecto](docs/poster/index.html) · 📘 [Documentación técnica completa](docs/spotmicrov3_code_documentation_v1.0.0.md)
+
+<p align="right"><a href="#english">Read in English ↑</a></p>
