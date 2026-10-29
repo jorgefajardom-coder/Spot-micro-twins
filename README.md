@@ -205,6 +205,14 @@ mientras avanza. Explicación completa en
 
 ![Spot Micro con cerebro de mosca en la cueva](docs/assets/spot_brain.gif)
 
+**Video de la misión en la cueva (30 s):** haz clic en la imagen para verlo.
+
+<p align="center">
+  <a href="docs/assets/spot_micro_mision.mp4">
+    <img src="docs/assets/spot_micro_mision.jpg" alt="Video: Spot Micro explorando la cueva con el cerebro de mosca" width="720">
+  </a>
+</p>
+
 ```bash
 cd desktop
 fly_brain\.venv\Scripts\python spot_brain.py
