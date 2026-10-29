@@ -331,6 +331,18 @@ Same protocol as V5 plus `cmd:ping` for the fail-safe.
 
 <p align="right"><a href="#english">Read in English ↑</a></p>
 
+<p align="center">
+  <img src="docs/assets/twins-logo.jpg" alt="Twins Spot Micro" width="360">
+</p>
+
+<h2 align="center">Spot Micro Twins</h2>
+
+<p align="center">
+  <img src="docs/assets/spotmicro-foto.jpg" alt="Prototipo físico del SpotMicro" width="720"><br>
+  <sub>Prototipo físico del robot cuadrúpedo basado en el repositorio open-source
+  <a href="https://gitlab.com/public-open-source/spotmicroai/3dprinting">SpotMicroAI (3D Printing)</a>.</sub>
+</p>
+
 <p align="center"><em>“La lealtad de un perro, la precisión de un robot.”</em></p>
 
 ## Descripción
