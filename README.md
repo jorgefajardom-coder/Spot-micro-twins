@@ -57,7 +57,8 @@
 flowchart LR
     GUI[GUI Python] -- "ángulos JSON · cmd:*" --> ESP[ESP32]
     ESP -- "telemetría IMU · status" --> GUI
-    ESP -- I2C --> PCA[PCA9685] --> S[12 servos TD8120MG]    MPU[MPU6050] -- I2C --> ESP
+    ESP -- I2C --> PCA[PCA9685] --> S[12 servos TD8120MG]
+    MPU[MPU6050] -- I2C --> ESP
 ```
 
 | Conexión | Detalle |
