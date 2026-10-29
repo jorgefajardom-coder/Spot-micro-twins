@@ -114,6 +114,22 @@ def send_command(command):
         ws = None
         return False
 
+HEARTBEAT_MS = 200  # el ESP32 suelta los servos tras 1 s sin mensajes (FAILSAFE_TIMEOUT_MS)
+
+def send_heartbeat():
+    """Mantener vivo el fail-safe del ESP32 aunque la pose no cambie. No reconecta."""
+    global ws, ws_connected
+    if not send_to_esp32_flag.get() or not ws_connected or ws is None:
+        return False
+    try:
+        ws.send("cmd:ping")
+        return True
+    except Exception as e:
+        print(f"⚠️ Error enviando heartbeat: {e}")
+        ws_connected = False
+        ws = None
+        return False
+
 # Cinemática y marchas viven en kinematics.py y gait.py
 from kinematics import RotMatrix3D, point_to_rad, normalize_angle, Kinematics
 from gait import GaitManager
@@ -302,7 +318,8 @@ class RobotGUI:
         
         global send_to_esp32_flag
         send_to_esp32_flag = tk.BooleanVar(value=False)
-        
+        self.heartbeat_loop()
+
         # Variables para almacenar valores de todos los modos
         self.joystick_values = {
             "yaw_height": {
@@ -1035,6 +1052,11 @@ class RobotGUI:
         
         # Programar próxima actualización
         self.root.after(100, self.update_mpu_display)
+
+    def heartbeat_loop(self):
+        """Heartbeat periódico para el fail-safe del ESP32"""
+        send_heartbeat()
+        self.root.after(HEARTBEAT_MS, self.heartbeat_loop)
 
     def _process_mpu_data(self, data_str):
         """Procesar datos JSON del MPU-6050 y respuestas de comandos"""

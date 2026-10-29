@@ -32,6 +32,9 @@ constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 15000;
 // Enviar {"status":"angles_received_*"} por cada paquete de ángulos.
 // Desactivado: el notebook no lo usa y, si nadie lee el socket, llena el buffer TCP.
 constexpr bool     ACK_ANGLE_PACKETS   = false;
+// Fail-safe: si no llega ningún mensaje en este tiempo, el robot se queda en la última pose.
+// La GUI manda cmd:ping cada 200 ms mientras el envío está activo.
+constexpr uint32_t FAILSAFE_TIMEOUT_MS = 1000;
 
 // ----- I2C -----
 constexpr uint32_t I2C_CLOCK_HZ        = 400000;  // PCA9685 y MPU6050 soportan Fast-mode

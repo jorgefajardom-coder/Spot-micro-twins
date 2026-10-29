@@ -26,11 +26,11 @@
 
 | | |
 |---|---|
-| **Velocidad** | 10 m/h constantes |
+| **Velocidad** | 10 m/h constantes (baja a propósito: da tiempo al LiDAR para mapear la cueva de forma óptima) |
 | **Fuerza** | 40 kg |
 | **Estructura** | Impresión 3D |
 | **Capacidad** | Subir escaleras y moverse en terrenos irregulares |
-| **Características** | Alta velocidad y gran capacidad de adaptación |
+| **Características** | Gran capacidad de adaptación |
 | **Superficies** | Óptimo para superficies complejas e irregulares |
 
 ## Arquitectura mecánica
@@ -41,7 +41,7 @@
 
 - 4 patas articuladas, 3 grados de libertad por pata (**12 DoF**).
 - Partes estructurales impresas en **PETG/PLA**.
-- **Servomotores de 20 kg·cm** para las articulaciones principales.
+- **Servomotores metálicos TD8120MG de 20 kg·cm** para las articulaciones principales.
 - Geometría inspirada en la morfología de cuadrúpedos reales.
 - Tapones de goma en las bases para mejor adherencia.
 
@@ -57,8 +57,7 @@
 flowchart LR
     GUI[GUI Python] -- "ángulos JSON · cmd:*" --> ESP[ESP32]
     ESP -- "telemetría IMU · status" --> GUI
-    ESP -- I2C --> PCA[PCA9685] --> S[12 servos 20 kg·cm]
-    MPU[MPU6050] -- I2C --> ESP
+    ESP -- I2C --> PCA[PCA9685] --> S[12 servos TD8120MG]    MPU[MPU6050] -- I2C --> ESP
 ```
 
 | Conexión | Detalle |
@@ -73,8 +72,7 @@ Todos los pines y constantes están en [`firmware/spotmicro_esp32/config.h`](fir
 
 | Componente | V mín | V máx | V nominal | Corriente | Potencia |
 |---|---|---|---|---|---|
-| Servo 20 kg | 4.8 V | 7.4 V | 6.4 V | 1–2 A (pico 3 A) | 12–18 W |
-| PCA9685 | 2.3 V | 5.5 V | 5 V | 10–30 mA | < 0.2 W |
+| Servo TD8120MG (20 kg) | 4.8 V | 7.4 V | 6.4 V | 1–2 A (pico 3 A) | 6.4–12.8 W || PCA9685 | 2.3 V | 5.5 V | 5 V | 10–30 mA | < 0.2 W |
 | Placa expansión | 4.8 V | 5.5 V | 5 V | 0.5 A máx | 2.5 W |
 | ESP32 | 3.0 V | 3.6 V | 3.3 V | 80–240 mA | 0.8 W |
 | MPU6050 | 2.3 V | 3.4 V | 3.3 V | 3–5 mA | 0.015 W |
@@ -90,7 +88,8 @@ Todos los pines y constantes están en [`firmware/spotmicro_esp32/config.h`](fir
 
 ## Resultados obtenidos
 
-- Locomoción estable en superficies planas a velocidad constante de 10 m/h.
+- Locomoción estable en superficies planas a velocidad constante de 10 m/h. Es una velocidad
+  intencionalmente baja para que el LiDAR tenga tiempo de mapear la cueva de forma óptima.
 - Capacidad de carga de hasta 2 kg manteniendo la estabilidad.
 - Respuesta rápida de los servomotores con ángulos precisos.
 - Comunicación inalámbrica estable hasta 15 metros de distancia.
@@ -241,7 +240,15 @@ las credenciales se configuran únicamente en `secrets.h`, excluido de Git.
 | `cmd:reset_imu` | `{"status":"IMU reset"}` |
 | `cmd:get_offsets` | `{"status":"offsets_data","accel_offsets":[…],"gyro_offsets":[…]}` |
 | `cmd:set_offsets:ax,ay,az,gx,gy,gz` | `{"status":"Offsets updated"}` |
+| `cmd:ping` | — (heartbeat del fail-safe) |
 | cualquier cosa inválida | `{"status":"error","error":"…"}` |
+
+**Fail-safe por pérdida de comandos:** si el ESP32 pasa 1 s sin recibir ningún mensaje
+(GUI cerrada, WiFi caído o socket colgado), el robot se queda estático en la última pose
+recibida, con los servos haciendo fuerza, y lo indica en el monitor serie. Al volver la
+comunicación sigue con el siguiente paquete de ángulos. La GUI envía `cmd:ping` cada
+200 ms mientras el envío al ESP32 está activo, así que una pose quieta no lo dispara. Un controlador propio debe enviar ángulos o `cmd:ping`
+al menos cada segundo (`FAILSAFE_TIMEOUT_MS` en `config.h`).
 
 ```json
 {"sensor":"mpu6050","accel":{"x":0,"y":0,"z":0},"gyro":{"x":0,"y":0,"z":0},
@@ -250,7 +257,7 @@ las credenciales se configuran únicamente en `secrets.h`, excluido de Git.
 
 ### V6: cambios respecto a V5
 
-Mismo protocolo que V5, así que la GUI funciona sin cambios.
+Mismo protocolo que V5 más `cmd:ping` para el fail-safe.
 
 **Latencia / rendimiento**
 - `server.accept()` bloqueaba el loop hasta que llegara un cliente; ahora solo se llama cuando `server.poll()` indica una conexión pendiente.
@@ -266,13 +273,13 @@ Mismo protocolo que V5, así que la GUI funciona sin cambios.
 - Si el MPU6050 no responde, el robot sigue funcionando sin IMU (V5 se quedaba en `while(1)`).
 - `set_offsets` con valores incompletos se rechaza en vez de aplicar ceros.
 - Un cliente nuevo reemplaza al anterior, útil cuando la GUI se reconecta con un socket viejo medio abierto.
+- Fail-safe: tras 1 s sin mensajes el robot se queda estático en la última pose y lo avisa por el monitor serie.
 
 **Organización**
 - Credenciales fuera del código (`secrets.h`), módulos `servos` / `imu` / `comms` / `leds`, `platformio.ini` con versiones fijadas y CI de GitHub que compila cada push.
 
 ### Pendiente
 
-- Fail-safe: postura segura si no llegan comandos en N ms.
 - Guardar offsets del IMU en NVS (`Preferences`) para no recalibrar en cada arranque.
 - Terminar de separar la GUI en módulos (ya están `kinematics.py` y `gait.py`; falta `gui.py`, comunicación…).
 

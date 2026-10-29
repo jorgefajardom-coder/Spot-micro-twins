@@ -8,5 +8,6 @@ bool begin();
 // Aplica los 12 ángulos (grados, 0-180) en orden de canal.
 // Solo escribe por I2C los canales cuyo pulso cambió.
 void setAll(const float (&angles)[cfg::NUM_SERVOS]);
+bool active();  // true si ya se movieron los servos al menos una vez
 
 }  // namespace servos
