@@ -205,13 +205,24 @@ mientras avanza. Explicación completa en
 
 ![Spot Micro con cerebro de mosca en la cueva](docs/assets/spot_brain.gif)
 
-**Video de la misión en la cueva (30 s):** haz clic en la imagen para verlo.
-
-<p align="center">
+<table align="center">
+<tr>
+<td align="center">
   <a href="docs/assets/spot_micro_mision.mp4">
-    <img src="docs/assets/spot_micro_mision.jpg" alt="Video: Spot Micro explorando la cueva con el cerebro de mosca" width="720">
-  </a>
-</p>
+    <img src="docs/assets/spot_micro_mision.jpg" alt="Video: Spot Micro explorando la cueva con el cerebro de mosca" height="236">
+  </a><br>
+  <sub><b>Misión en la cueva (30 s)</b></sub>
+</td>
+<td align="center">
+  <a href="docs/assets/spot-micro-cueva.mp4">
+    <img src="docs/assets/spot-micro-cueva.jpg" alt="Video: cueva reconstruida con el LiDAR y fuga de gas localizada" height="236">
+  </a><br>
+  <sub><b>Cueva reconstruida con el LiDAR (13 s)</b></sub>
+</td>
+</tr>
+</table>
+
+<p align="center"><sub>Haz clic en una imagen para ver el video.</sub></p>
 
 ```bash
 cd desktop
