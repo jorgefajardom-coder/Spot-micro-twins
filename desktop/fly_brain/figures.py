@@ -127,8 +127,12 @@ def scatter(lang, name="LPLC2_LC4"):
     ax.grid(True, color=GRID, lw=0.8)
     ax.set_axisbelow(True)
     r, s = float(z["r"]), float(z["slope"])
-    sub = (f"r = {r:.3f} · pendiente {s:.3f} · {len(a):,} neuronas activas".replace(",", ".")
-           if lang == "es" else f"r = {r:.3f} · slope {s:.3f} · {len(a):,} active neurons")
+    if lang == "es":  # coma decimal y punto de miles
+        n = f"{len(a):,}".replace(",", ".")
+        sub = (f"r = {r:.3f} · pendiente {s:.3f}".replace(".", ",")
+               + f" · {n} neuronas activas")
+    else:
+        sub = f"r = {r:.3f} · slope {s:.3f} · {len(a):,} active neurons"
     _title(fig, t["scatter_title"], sub)
     return fig
 

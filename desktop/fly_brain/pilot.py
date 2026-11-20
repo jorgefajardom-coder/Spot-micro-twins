@@ -92,6 +92,9 @@ class FlyPilot:
         self.brain.reset()
         self.vx = self.wz = 0.0
         self.escape_left = 0.0  # ms que quedan de la maniobra de escape
+        self.pending_ms = 0.0   # tiempo pedido que aún no cabe en un paso dt entero
+        self.last_cmd = Command()
+        self.last_counts = np.zeros(self.c.n, np.int64)
 
     def _probe(self, inputs, ms=300.0):
         self.brain.reset()
@@ -126,7 +129,20 @@ class FlyPilot:
         return hz
 
     def step(self, senses: Senses, ms=40.0) -> Command:
-        """Corre el cerebro `ms` con lo que ve el robot y devuelve el comando de marcha."""
+        """Corre el cerebro `ms` con lo que ve el robot y devuelve el comando de marcha.
+
+        El cerebro avanza en pasos dt enteros; lo que sobra de `ms` se guarda para la
+        siguiente llamada, así el tiempo neuronal no se desfasa del mundo (con dt 0,5 ms y
+        fotogramas de 41,67 ms el redondeo perdía un 0,4 % por fotograma).
+        """
+        dt = self.brain.p.dt
+        self.pending_ms += ms
+        n_steps = int(self.pending_ms / dt + 1e-6)
+        if n_steps == 0:  # menos de un paso: nada que simular todavía
+            self.last_counts = np.zeros(self.c.n, np.int64)
+            return self.last_cmd
+        ms = n_steps * dt
+        self.pending_ms = max(0.0, self.pending_ms - ms)
         hz = self.encode(senses)
         self.brain.stimulate(*[(self.inputs[k], r) for k, r in hz.items()])
         counts = self.brain.run(ms)
@@ -147,4 +163,5 @@ class FlyPilot:
         a = 1.0 - math.exp(-ms / self.smooth_ms)  # filtro: los servos no deben dar tirones
         self.vx += a * (vx_target - self.vx)
         self.wz += a * (wz_target - self.wz)
-        return Command(self.vx, self.wz, escaping, rates, hz)
+        self.last_cmd = Command(self.vx, self.wz, escaping, rates, hz)
+        return self.last_cmd
