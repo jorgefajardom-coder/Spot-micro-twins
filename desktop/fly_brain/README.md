@@ -4,7 +4,8 @@
 > [README_v1.md](README_v1.md).
 >
 > **Wiki a fondo del cerebro** (modelo, simulador CPU/GPU, cómo se redujo el tiempo,
-> validación y piloto): [`docs/wiki/cerebro/`](../../docs/wiki/cerebro/README.md).
+> validación y piloto): [`docs/wiki/cerebro/`](../../docs/wiki/cerebro/README.md)
+> ([English](../../docs/wiki/brain/README.md)).
 
 El Spot Micro explora una cueva real manejado por el **cerebro completo de una
 mosca** (*Drosophila*, conectoma FlyWire v783: 138.639 neuronas y 15 millones de
@@ -85,7 +86,8 @@ python -m venv .venv
 .venv\Scripts\python download_skeletons.py      # opcional: forma de cada neurona (~1 h, reanudable)
 ```
 
-- Si hay GPU CUDA se usa sola; `--device cpu` fuerza la CPU.
+- Si hay GPU CUDA se usa sola; `--device cpu` fuerza la CPU. Sin GPU el piloto usa
+  `dt = 0,5 ms` (en vez de 0,1 ms) para que la simulación no vaya a cámara lenta.
 - La cueva real se descarga sola la primera vez que se abre el visor.
 - En Windows conviene que Python use la GPU NVIDIA para OpenGL (Configuración →
   Pantalla → Gráficos): con la integrada el visor va a menos de la mitad de fps.
@@ -101,6 +103,7 @@ fly_brain\.venv\Scripts\python spot_brain.py                         # el visor
 fly_brain\.venv\Scripts\python spot_brain.py --cueva generada        # galería sintética de 16 m
 fly_brain\.venv\Scripts\python spot_brain.py --record spot.mp4 --seconds 30 --speed 1   # vídeo
 fly_brain\.venv\Scripts\python cave_explorer.py scans\cueva_AAAAMMDD_HHMMSS.vtp           # una cueva guardada
+fly_brain\.venv\Scripts\python spot_brain.py --profile                # tiempos de cada fase al cerrar
 ```
 
 Teclas del visor:
@@ -414,7 +417,7 @@ python validate_brian2.py            # comparar con el modelo original
 
 ```bash
 cd desktop/fly_brain
-.venv\Scripts\python -m unittest discover -s tests -v     # 27: simulador (CPU y GPU) y mundo
+.venv\Scripts\python -m unittest discover -s tests -v     # 31: simulador (CPU y GPU), piloto y mundo
 cd ..
 fly_brain\.venv\Scripts\python -m unittest discover -s tests -v   # 17: cinemática y marcha
 ```
@@ -436,6 +439,7 @@ Cubren:
 | `fly_brain/lif.py`, `lif_gpu.py` | El simulador LIF (CPU y GPU) |
 | `fly_brain/pilot.py` | Sentidos → neuronas → descendentes → comando de marcha |
 | `fly_brain/probe.py`, `validate_brian2.py` | Exploración y validación del modelo |
+| `fly_brain/benchmark.py`, `figures.py` | Medidas de rendimiento y gráficas de la wiki |
 | `fly_brain/download_*.py` | Descarga de datos y esqueletos |
 | `sim_world.py` | La cueva, el terreno, los sensores, el LiDAR y el mapa (sin gráficos) |
 | `caves/real_cave.py` | Descarga y lectura de la cueva real (Potree) |

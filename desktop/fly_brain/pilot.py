@@ -13,6 +13,10 @@ Decodificación (qué se lee): frecuencias de las descendentes en la última ven
 convertidas a vx (avance) y wz (giro) en [-1, 1] para gait.GaitManager.set_command.
 El hemisferio izquierdo del cerebro procesa el ojo izquierdo, así que "left" en
 FlyWire es el lado izquierdo del robot.
+
+Paso de integración: 0,1 ms (el del artículo) en la GPU, que va 8x por delante del
+tiempo real. En la CPU 0,1 ms va a 0,29x y todo el visor iría a cámara lenta, así que
+sin GPU se usa 0,5 ms (~1x, unas frecuencias un 3 % distintas).
 """
 from dataclasses import dataclass, field
 import math
@@ -22,6 +26,7 @@ import numpy as np
 from lif import Params, make_brain
 
 MAX_HZ = 150.0  # frecuencia de estímulo a saliencia 1 (la del artículo)
+DT_GPU, DT_CPU = 0.1, 0.5  # ms
 
 LC10 = ('LC10a', 'LC10c-1', 'LC10c-2', 'LC10d')
 INPUTS = {
@@ -57,9 +62,20 @@ class Command:
     inputs: dict = field(default_factory=dict)  # Hz por grupo de entrada
 
 
+def gpu_available(device='auto'):
+    """¿Correrá make_brain en la GPU con este device?"""
+    if device == 'cpu':
+        return False
+    import lif_gpu
+    return lif_gpu.available()
+
+
 class FlyPilot:
-    def __init__(self, connectome, params=Params(dt=0.1), device='auto', seed=0, smooth_ms=150.0):
+    def __init__(self, connectome, params=None, device='auto', seed=0, smooth_ms=150.0):
+        """params=None elige el paso según dónde corra el cerebro (DT_GPU o DT_CPU)."""
         self.c = connectome
+        if params is None:
+            params = Params(dt=DT_GPU if gpu_available(device) else DT_CPU)
         self.brain = make_brain(connectome, params, seed=seed, device=device)
 
         def group(types, side):
