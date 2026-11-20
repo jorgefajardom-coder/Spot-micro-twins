@@ -208,7 +208,9 @@ with the fly's pursuit circuit, steers around heat sources and flees threats wit
 Giant Fiber. It carries a **Spot Arm–style arm** with the **360° LiDAR on its head**,
 which looks around and rebuilds the cave in 3D as it moves. Full explanation in
 [`desktop/fly_brain/README.md`](desktop/fly_brain/README.md) (v2; the previous version is in
-[`README_v1.md`](desktop/fly_brain/README_v1.md)).
+[`README_v1.md`](desktop/fly_brain/README_v1.md)). In-depth wiki of the brain: how the
+simulator works and how it went from 740 s to 3.6 s, in
+[`docs/wiki/brain/`](docs/wiki/brain/README.md) (also [in Spanish](docs/wiki/cerebro/README.md)).
 
 ![Spot Micro with the fly brain in the cave](docs/assets/spot_brain.gif)
 
@@ -528,7 +530,9 @@ huye de las amenazas con la Giant Fiber. Lleva un **brazo al estilo del Spot Arm
 con el **LiDAR 360° en la cabeza**, que mira alrededor y reconstruye la cueva en 3D
 mientras avanza. Explicación completa en
 [`desktop/fly_brain/README.md`](desktop/fly_brain/README.md) (v2; la versión anterior está en
-[`README_v1.md`](desktop/fly_brain/README_v1.md)).
+[`README_v1.md`](desktop/fly_brain/README_v1.md)). Wiki a fondo del cerebro (cómo funciona
+el simulador y cómo pasó de 740 s a 3,6 s) en [`docs/wiki/cerebro/`](docs/wiki/cerebro/README.md)
+(también [en inglés](docs/wiki/brain/README.md)).
 
 ![Spot Micro con cerebro de mosca en la cueva](docs/assets/spot_brain.gif)
 

@@ -19,6 +19,7 @@ Se ejecuta con el entorno de fly_brain (CuPy/numba, PyVista y los datos de FlyWi
     fly_brain\\.venv\\Scripts\\python spot_brain.py
     fly_brain\\.venv\\Scripts\\python spot_brain.py --record spot.mp4 --seconds 30 --speed 2
     fly_brain\\.venv\\Scripts\\python spot_brain.py --cueva generada
+    fly_brain\\.venv\\Scripts\\python spot_brain.py --profile        # tiempos por fase al cerrar
 
 Teclas:  t terreno escarpado (o el botón) · espacio lanzar un obstáculo · r reiniciar
 """
@@ -462,19 +463,21 @@ class BrainViewer:
     TABS = (("Brain · LiDAR map", BRAIN, MAP), ("Eyes · Descending", EYES, DNS),
             ("History · Sensors", HISTORY, SENSORS))
 
-    def __init__(self, device="auto", off_screen=False, size=WINDOW, cave="real"):
+    def __init__(self, device="auto", off_screen=False, size=WINDOW, cave="real", profile=False):
         import pyvista as pv
         from connectome import Connectome
         from pilot import FlyPilot, Senses
         self.pv, self.Senses = pv, Senses
         self.W, self.H = size
+        self.profile = {} if profile else None  # ms por fase y fotograma (--profile)
 
         print("Loading the FlyWire connectome…", flush=True)
         self.connectome = Connectome.load()
         self.pilot = FlyPilot(self.connectome, device=device)
         gain = self.pilot.calibrate()
         self.backend = "GPU" if type(self.pilot.brain).__name__ == "BrainGPU" else "CPU"
-        print(f"Brain on {self.backend} · calibration {({k: round(v) for k, v in gain.items()})}")
+        print(f"Brain on {self.backend} · dt {self.pilot.brain.p.dt} ms · "
+              f"calibration {({k: round(v) for k, v in gain.items()})}")
 
         self.kin = Kinematics()
         self.gait = GaitManager(self.kin)
@@ -856,8 +859,24 @@ class BrainViewer:
         vx, vy, wz = self.gait.command
         return vx * v, vy * v, wz * v / math.hypot(x, y)
 
+    def _timed(self, name, t0):
+        """Apunta cuánto tardó una fase desde t0 (solo con --profile). Devuelve el instante actual."""
+        now = time.perf_counter()
+        if self.profile is not None:
+            self.profile.setdefault(name, []).append((now - t0) * 1000.0)
+        return now
+
+    def print_profile(self):
+        """Mediana y percentil 95 de cada fase (ms), ordenadas por coste."""
+        if not self.profile:
+            return
+        print("\nProfile (ms per frame)        median     p95")
+        for name, v in sorted(self.profile.items(), key=lambda kv: -np.median(kv[1])):
+            print(f"  {name:<24} {np.median(v):8.2f} {np.percentile(v, 95):8.2f}   ({len(v)} frames)")
+
     def tick(self, dt):
         """Un paso: mundo y sensores -> cerebro (dt de tiempo neuronal) -> marcha."""
+        t0 = time.perf_counter()
         self.last_dt = dt
         w = self.world
         w.update(dt, self._body_velocity())
@@ -871,13 +890,16 @@ class BrainViewer:
                 origin = self.arm.lidar_origin(transform(*skel["body"]))
         w.lidar_scan(BODY_HEIGHT + float(w.ground(w.pose[0], w.pose[1])), origin=origin)
         bearing, dist, looming, loom_bearing, self.readings = w.senses()
+        t0 = self._timed("world + LiDAR", t0)
         self.cmd = self.pilot.step(self.Senses(bearing, dist, looming, loom_bearing), ms=dt * 1000.0)
+        t0 = self._timed("brain", t0)
         self.gait.set_command(self.cmd.vx, 0.0, self.cmd.wz)
         # Actividad visible: cada espiga enciende la neurona y se apaga con ACTIVITY_TAU_MS
         spikes = self.pilot.last_counts
         self.activity *= math.exp(-dt * 1000.0 / ACTIVITY_TAU_MS)
         self.activity = np.minimum(1.0, self.activity + 0.5 * spikes).astype(np.float32)
         self.last_feet = np.array(self.gait.step(dt))
+        self._timed("gait", t0)
         return self.last_feet
 
     # ----- dibujo -----
@@ -1098,8 +1120,15 @@ class BrainViewer:
         dt = min(max(now - self.last, 0.02), 0.08)
         self.last = now
         if self.scanning:
-            self.draw(self.tick(dt))
+            feet = self.tick(dt)
+            t0 = time.perf_counter()
+            self.draw(feet)
+            t0 = self._timed("draw (update meshes)", t0)
+        else:
+            t0 = time.perf_counter()
         self.pl.render()
+        self._timed("render (VTK)", t0)
+        self._timed("frame total", now)
 
     def run(self):
         for key in ("space", "t", "r", "1", "2", "3"):
@@ -1109,6 +1138,7 @@ class BrainViewer:
         self.pl.show()
         if self.map_pool is not None:
             self.map_pool.shutdown(wait=False, cancel_futures=True)
+        self.print_profile()
 
     def record(self, path, seconds=30.0, fps=24, speed=2.0, rough_at=None):
         """Misión grabada con dt fijo (vídeo .mp4 o GIF, sin ventana). speed > 1 acelera la
@@ -1211,11 +1241,14 @@ def main():
     ap.add_argument("--seconds", type=float, default=30.0, help="duración del vídeo")
     ap.add_argument("--speed", type=float, default=2.0, help="pasos de simulación por fotograma del vídeo")
     ap.add_argument("--cueva", choices=["real", "generada"], default="real")
+    ap.add_argument("--profile", action="store_true",
+                    help="al cerrar, imprime cuánto tarda cada fase del fotograma (mundo, cerebro, dibujo…)")
     args = ap.parse_args()
-    viewer = BrainViewer(args.device, off_screen=bool(args.record), cave=args.cueva)
+    viewer = BrainViewer(args.device, off_screen=bool(args.record), cave=args.cueva, profile=args.profile)
     if args.record:
         n = viewer.record(args.record, args.seconds, speed=args.speed)
         print(f"Video: {args.record} ({n} frames)")
+        viewer.print_profile()
     else:
         viewer.run()
 
