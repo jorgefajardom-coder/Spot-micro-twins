@@ -1,5 +1,7 @@
 # 5 · Cómo reducimos el tiempo
 
+> 🌐 [English](../brain/05-cutting-the-time.md) · **Español**
+
 [← El simulador en GPU](04-simulador-gpu.md) · [Índice](README.md) · [Siguiente: validación →](06-validacion.md)
 
 ---
@@ -54,6 +56,8 @@ Un fotograma de ~40 ms
 └── dibujo                    ████████████████ (el resto)
 ```
 
+![Velocidad de cada versión del simulador](../assets/brain_speed_es.png)
+
 A continuación, **todas las optimizaciones**, de la que más ahorra a la que menos.
 
 ---
@@ -81,7 +85,8 @@ for pre in neuronas_que_dispararon:
 ```
 
 El coste pasa a ser **nº de espigas × conexiones medias por neurona**. Cada neurona
-tiene de media ~108 dianas (15 M ÷ 138.639). Un ejemplo ilustrativo:
+tiene de media ~108 dianas (15 M ÷ 138.639). Un ejemplo **ilustrativo** (las cifras
+reales de la misión las mide `python benchmark.py --only activity`):
 
 | Por paso | Producto completo | Por eventos (500 espigas) |
 |---|---|---|
@@ -153,7 +158,7 @@ En `lif.py` la integración no tiene ningún `if` por neurona: se calcula todo y
 **selecciona** el resultado. Así LLVM (vía numba) **vectoriza** el bucle con
 instrucciones SIMD.
 
-| Versión | Coste relativo |
+| Versión | Coste relativo (PC de desarrollo, según el código) |
 |---|---|
 | Con `if refractaria: continue` | ~7× |
 | **Sin ramas** (`x = a if cond else b`) | **1×** |
@@ -164,6 +169,12 @@ ciclos), y la rama impide además que el bucle use SIMD.
 
 En cambio, en la segunda fase (`if fired[pre]`) **sí** se deja la rama, porque es
 muy predecible: casi ninguna neurona dispara en un paso dado.
+
+> **Depende de la máquina.** En una CPU de servidor, con la variante "con `if`" de
+> `benchmark.py`, LLVM convirtió la rama en una selección por su cuenta y las dos
+> versiones tardaron lo mismo. La versión sin ramas nunca es más lenta, así que es la
+> apuesta segura; `python benchmark.py --only branches` mide la diferencia real en tu
+> CPU.
 
 Ver [el simulador en CPU](03-simulador-cpu.md#fase-1--_integrate-todas-las-neuronas-sin-ramas).
 
@@ -254,9 +265,9 @@ Copiar el estado completo cada vez costaría más que simular.
 | CPU | 0,29× | **0,99×** | ~3 % |
 
 Como la integración es exacta, el `dt` grueso solo afecta a cuándo se detectan las
-espigas y al retardo/refractario redondeados, no a la estabilidad. El piloto y la
-validación usan **0,1 ms** (fidelidad máxima, y la GPU va sobrada); `probe.py` en CPU
-usa 0,5 ms para ir a tiempo real.
+espigas y al retardo/refractario redondeados, no a la estabilidad. La validación y el
+piloto en GPU usan **0,1 ms** (fidelidad máxima, y la GPU va sobrada); `probe.py` y el
+piloto en CPU usan 0,5 ms automáticamente para ir a tiempo real.
 
 ---
 
@@ -306,15 +317,30 @@ validación neurona a neurona contra el original da **r = 0,999** →
 Ideas que no se han necesitado (la GPU ya va 8 veces por delante del tiempo real),
 por si algún día se quiere más:
 
-- **Visor en CPU a tiempo real:** el piloto usa siempre `dt = 0,1 ms`; en una
-  máquina sin GPU el visor va más lento que el tiempo real. Usar `dt = 0,5 ms` cuando
-  el cerebro cae en CPU lo dejaría en ~1×.
 - **Pesos en `float16`** o índices en 24 bits: menos tráfico en la propagación.
 - **Reordenar las neuronas** (p. ej. por región o con Cuthill–McKee) para que las
   dianas de una columna queden más juntas en memoria y los `atomicAdd` peguen en las
   mismas líneas de caché.
 - **Varios ensayos a la vez** en la misma GPU (*batching*) para barridos como
   `probe.py --scan`.
+
+---
+
+## Medirlo tú mismo
+
+Todo lo de esta página se puede medir en tu máquina:
+
+```bash
+cd desktop/fly_brain
+python benchmark.py --markdown          # velocidad, espigas/paso, CUDA Graphs, ramas
+cd ..
+fly_brain\.venv\Scripts\python spot_brain.py --profile   # coste de cada fase del fotograma
+```
+
+`benchmark.py` guarda los resultados en `data/benchmark.json` y, con `--markdown`,
+imprime las tablas listas para pegar aquí. `--synthetic` corre lo mismo sobre una red
+aleatoria del mismo tamaño, sin descargar FlyWire (sirve para probar el script, no
+para sacar cifras del cerebro).
 
 ---
 

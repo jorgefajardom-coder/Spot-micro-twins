@@ -1,5 +1,7 @@
 # 8 · Ver el cerebro en vivo
 
+> 🌐 [English](../brain/08-visualization.md) · **Español**
+
 [← El piloto](07-piloto.md) · [Índice](README.md) · [Siguiente: herramientas y glosario →](09-herramientas-y-glosario.md)
 
 ---
@@ -129,6 +131,10 @@ lento 48 ms.
 | **Topes de actividad y sinapsis** | Coste acotado aunque se active medio cerebro |
 | **FXAA** en vez de supersampling | El supersampling duplicaba los textos de VTK y rompía el SSAO |
 | **`dt` real, acotado a 20–80 ms** | Si un fotograma tarda, el cerebro avanza ese tiempo (sin acumular retraso) pero sin saltos enormes |
+
+Para ver en qué se va el tiempo de cada fotograma: `spot_brain.py --profile` imprime al
+cerrar la mediana y el percentil 95 de cada fase (mundo + LiDAR, cerebro, marcha,
+dibujo, render).
 
 Para grabar vídeo (`--record`), el `dt` es fijo (1/24 s) y `--speed` controla
 cuántos pasos de simulación entran en cada fotograma.

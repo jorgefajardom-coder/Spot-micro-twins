@@ -1,5 +1,7 @@
 # 7 · El piloto: del sentido al músculo
 
+> 🌐 [English](../brain/07-pilot.md) · **Español**
+
 [← Validación](06-validacion.md) · [Índice](README.md) · [Siguiente: ver el cerebro en vivo →](08-visualizacion.md)
 
 ---
@@ -11,6 +13,10 @@ mosca. Tiene tres trabajos:
    mosca.
 2. **Correr el cerebro** el tiempo de un fotograma.
 3. **Decodificar** las neuronas descendentes en un comando de marcha (`vx`, `wz`).
+
+> Por ahora esto pilota el Spot Micro **simulado** del visor de la cueva. El robot
+> físico no lleva los sensores de misión: ver
+> [del simulador al robot real](10-del-simulador-al-robot-real.md).
 
 ```mermaid
 flowchart LR
@@ -86,6 +92,14 @@ El cerebro avanza **exactamente el tiempo real del fotograma** (acotado entre 20
 
 El estado persiste entre fotogramas: la mosca no "reinicia" su cerebro, solo cambia
 lo que ve.
+
+> **Paso de integración según el hardware.** En GPU el piloto usa `dt = 0,1 ms` (el
+> del artículo; la GPU va 8× por delante del tiempo real). En CPU, 0,1 ms iría a
+> 0,29×: cada fotograma tardaría más que el tiempo que simula, el visor tocaría el
+> tope de 80 ms y todo (mundo y cerebro, siempre sincronizados) iría a cámara lenta,
+> a unos 3 fps. Por eso, **sin GPU, `FlyPilot` usa `dt = 0,5 ms` automáticamente**
+> (~1× para el cerebro, frecuencias un 3 % distintas). Se puede forzar pasando
+> `params=Params(dt=...)`.
 
 ---
 

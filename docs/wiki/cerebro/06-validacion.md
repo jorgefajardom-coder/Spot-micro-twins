@@ -1,5 +1,7 @@
 # 6 · Validación contra el modelo original
 
+> 🌐 [English](../brain/06-validation.md) · **Español**
+
 [← Cómo reducimos el tiempo](05-reduccion-del-tiempo.md) · [Índice](README.md) · [Siguiente: el piloto →](07-piloto.md)
 
 ---
@@ -43,6 +45,10 @@ python validate_brian2.py --reuse          # reutiliza el resultado de Brian2 gu
 - **Pendiente 1,003**: no hay sesgo sistemático; no disparamos ni más ni menos.
 - La Giant Fiber, la neurona que decide el escape, coincide en un ~1 %, dentro del
   ruido Poisson entre ensayos.
+
+`validate_brian2.py` guarda las frecuencias de ambos en `data/validation_*.npz`, y
+`python figures.py scatter` dibuja la comparación neurona a neurona (cada punto, una
+neurona; la diagonal, coincidencia perfecta).
 
 ---
 

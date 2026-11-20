@@ -1,5 +1,7 @@
 # 2 · El modelo LIF
 
+> 🌐 [English](../brain/02-lif-model.md) · **Español**
+
 [← El conectoma](01-conectoma.md) · [Índice](README.md) · [Siguiente: el simulador en CPU →](03-simulador-cpu.md)
 
 ---

@@ -1,5 +1,7 @@
 # 9 · Herramientas, pruebas y glosario
 
+> 🌐 [English](../brain/09-tools-and-glossary.md) · **Español**
+
 [← Ver el cerebro en vivo](08-visualizacion.md) · [Índice](README.md)
 
 ---
@@ -76,17 +78,51 @@ De esta tabla sale directamente la elección de entradas y salidas del
 
 ---
 
+## `benchmark.py`: medir el rendimiento
+
+[`benchmark.py`](../../../desktop/fly_brain/benchmark.py) mide las cifras de
+[cómo reducimos el tiempo](05-reduccion-del-tiempo.md):
+
+| Medida | Qué saca |
+|---|---|
+| `speed` | Veces tiempo real y µs por paso, en CPU y GPU, con `dt` 0,1 y 0,5 ms |
+| `activity` | Espigas por paso y sinapsis entregadas por paso: el ahorro **real** de la propagación por eventos |
+| `graphs` | GPU con y sin CUDA Graphs |
+| `branches` | CPU: integración sin ramas frente a la versión con `if` |
+
+```bash
+python benchmark.py                   # todo
+python benchmark.py --only activity   # una medida
+python benchmark.py --markdown        # tablas para pegar en la wiki
+python benchmark.py --synthetic       # red aleatoria, sin datos (solo para probar el script)
+```
+
+Guarda los resultados en `data/benchmark.json`.
+
+## `figures.py`: las gráficas de la wiki
+
+[`figures.py`](../../../desktop/fly_brain/figures.py) genera las imágenes de
+`docs/wiki/assets/`, en español y en inglés:
+
+| Figura | Comando | Necesita |
+|---|---|---|
+| Velocidad de cada versión | `python figures.py speed` | Nada |
+| Original contra nuestro, neurona a neurona | `python figures.py scatter` | Haber corrido `validate_brian2.py` |
+| Espigas durante un escape (*raster*) | `python figures.py raster` | El conectoma de FlyWire |
+
 ## Todas las pruebas
 
 ```bash
 cd desktop/fly_brain
-.venv\Scripts\python -m unittest discover -s tests -v     # 27: simulador (CPU y GPU) y mundo
+.venv\Scripts\python -m unittest discover -s tests -v     # 31: simulador (CPU y GPU), piloto y mundo
 cd ..
 fly_brain\.venv\Scripts\python -m unittest discover -s tests -v   # 17: cinemática y marcha
 ```
 
 - **Simulador:** el LIF en CPU y GPU, con redes pequeñas hechas a mano (ver
   [validación](06-validacion.md#tests-automáticos)).
+- **Piloto:** el paso de integración según el hardware (0,1 ms en GPU, 0,5 ms en CPU) y
+  que el comando quede acotado.
 - **Mundo:** geometría de la cueva, LiDAR, mapa sin duplicados, gas, calor y esquivar
   paredes; en la cueva real, la ruta, el LiDAR y el gas.
 
@@ -105,10 +141,16 @@ simplificado (LIF, sin dendritas, sin neuromoduladores, sin adaptación). Ese mo
 reproduce conductas medidas en moscas vivas (Shiu et al. 2024), pero no es una
 simulación biofísica completa.
 
+**¿Pilota el robot físico?**
+Todavía no: solo el Spot Micro simulado. El robot físico se maneja desde la GUI y no
+lleva sensores de misión, que no se integraron a propósito para poder adaptarlo a
+distintos proyectos. Ver [del simulador al robot real](10-del-simulador-al-robot-real.md).
+
 **¿Necesito GPU?**
-No es obligatorio: todo funciona en CPU. Pero con `dt = 0,1 ms` la CPU va a 0,29×
-tiempo real, así que el visor irá más lento que el tiempo real. Con una GPU NVIDIA y
-`cupy-cuda12x[ctk]` va 8 veces por delante.
+No es obligatorio: todo funciona en CPU. Sin GPU el piloto usa `dt = 0,5 ms`, con el
+que la CPU va a ~1× (el visor, con el dibujo encima, algo por debajo). Con una GPU
+NVIDIA y `cupy-cuda12x[ctk]` usa el `dt` del artículo (0,1 ms) y va 8 veces por
+delante del tiempo real.
 
 **¿Por qué no usar Brian2, NEST o GeNN directamente?**
 Brian2 es el original y necesita compilar C++ en cada experimento; además está
@@ -167,4 +209,4 @@ Ver [el piloto](07-piloto.md#por-qué-entrar-por-los-ojos).
 
 ---
 
-[← Ver el cerebro en vivo](08-visualizacion.md) · [Índice](README.md)
+[← Ver el cerebro en vivo](08-visualizacion.md) · [Índice](README.md) · [Siguiente: del simulador al robot real →](10-del-simulador-al-robot-real.md)
