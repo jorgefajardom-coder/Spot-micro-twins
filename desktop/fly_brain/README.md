@@ -2,6 +2,9 @@
 
 > **Versión 2** del README. La versión anterior sigue disponible en
 > [README_v1.md](README_v1.md).
+>
+> **Wiki a fondo del cerebro** (modelo, simulador CPU/GPU, cómo se redujo el tiempo,
+> validación y piloto): [`docs/wiki/cerebro/`](../../docs/wiki/cerebro/README.md).
 
 El Spot Micro explora una cueva real manejado por el **cerebro completo de una
 mosca** (*Drosophila*, conectoma FlyWire v783: 138.639 neuronas y 15 millones de
