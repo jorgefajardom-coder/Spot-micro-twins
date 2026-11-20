@@ -1,5 +1,7 @@
 # 3 · El simulador en CPU (`lif.py`)
 
+> 🌐 [English](../brain/03-cpu-simulator.md) · **Español**
+
 [← El modelo LIF](02-modelo-lif.md) · [Índice](README.md) · [Siguiente: el simulador en GPU →](04-simulador-gpu.md)
 
 ---
@@ -86,9 +88,12 @@ para todas y luego se **selecciona** con expresiones condicionales, que el
 compilador convierte en instrucciones *select* / *blend*. Así LLVM puede
 **vectorizar** el bucle con SIMD (AVX2: 8 neuronas por instrucción en `float32`).
 
-> Con la versión "natural" (saltarse las refractarias con un `if`) era **~7 veces
-> más lento**: qué neuronas están refractarias es aleatorio, el predictor de saltos
-> de la CPU falla constantemente y además el bucle deja de vectorizarse.
+> En el PC de desarrollo, la versión con atajos por neurona era **~7 veces más
+> lenta** (según anota el código): qué neuronas están refractarias es aleatorio, el
+> predictor de saltos falla constantemente y el bucle deja de vectorizarse. Ojo: el
+> efecto depende de la CPU y del compilador; a veces LLVM convierte la rama en una
+> selección por su cuenta y las dos versiones quedan iguales.
+> `python benchmark.py --only branches` lo mide en tu máquina.
 > Ver [optimización 4](05-reduccion-del-tiempo.md#4-bucle-sin-ramas-simd-en-cpu).
 
 ### Fase 2 · `_run`: estímulos, reset y propagación
@@ -143,7 +148,8 @@ En un i7-12650H, con *looming* (LPLC2 + LC4 a 150 Hz):
 | 0,5 ms | **0,99×** tiempo real | — (5× menos pasos) |
 
 Con `dt = 0,5 ms` la CPU va prácticamente a tiempo real y las frecuencias cambian
-solo un **3 %**. Por eso `probe.py` usa 0,5 ms cuando no hay GPU. Para ir 8 veces
+solo un **3 %**. Por eso `probe.py` y el piloto del visor (`FlyPilot`) usan 0,5 ms
+automáticamente cuando no hay GPU. Para ir 8 veces
 *más* rápido que el tiempo real con el `dt` del artículo hace falta la GPU →
 [siguiente página](04-simulador-gpu.md).
 

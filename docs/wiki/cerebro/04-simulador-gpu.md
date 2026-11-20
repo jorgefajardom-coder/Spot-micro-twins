@@ -1,5 +1,7 @@
 # 4 · El simulador en GPU (`lif_gpu.py`)
 
+> 🌐 [English](../brain/04-gpu-simulator.md) · **Español**
+
 [← El simulador en CPU](03-simulador-cpu.md) · [Índice](README.md) · [Siguiente: cómo reducimos el tiempo →](05-reduccion-del-tiempo.md)
 
 ---

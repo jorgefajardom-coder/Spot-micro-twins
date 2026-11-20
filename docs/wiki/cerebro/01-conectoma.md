@@ -1,5 +1,7 @@
 # 1 · El conectoma
 
+> 🌐 [English](../brain/01-connectome.md) · **Español**
+
 [← Índice](README.md) · [Siguiente: el modelo LIF →](02-modelo-lif.md)
 
 ---
