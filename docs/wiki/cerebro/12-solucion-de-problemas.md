@@ -59,7 +59,7 @@ Para forzar uno u otro: `--device gpu` (falla si no hay) o `--device cpu`.
 
 ## Sin memoria en la GPU
 
-El cerebro necesita ~140 MB de GPU (pesos + estado). Si falla con `OutOfMemoryError`:
+Los datos del cerebro ocupan ~140 MB de GPU (pesos + estado), más unos cientos de MB del contexto de CUDA. Si falla con `OutOfMemoryError`:
 
 - Cierra otros programas que usen la GPU (juegos, otros notebooks con CuPy/PyTorch).
 - No crees varios `Brain` a la vez: usa `reset()` para repetir experimentos con el

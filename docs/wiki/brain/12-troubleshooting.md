@@ -58,7 +58,7 @@ To force one or the other: `--device gpu` (fails if there is none) or `--device 
 
 ## Out of GPU memory
 
-The brain needs ~140 MB of GPU memory (weights + state). If it fails with
+The brain's data takes ~140 MB of GPU memory (weights + state), plus a few hundred MB for the CUDA context. If it fails with
 `OutOfMemoryError`:
 
 - Close other programs using the GPU (games, other notebooks with CuPy/PyTorch).
