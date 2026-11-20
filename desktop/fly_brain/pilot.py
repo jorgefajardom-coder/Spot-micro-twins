@@ -13,6 +13,10 @@ Decodificación (qué se lee): frecuencias de las descendentes en la última ven
 convertidas a vx (avance) y wz (giro) en [-1, 1] para gait.GaitManager.set_command.
 El hemisferio izquierdo del cerebro procesa el ojo izquierdo, así que "left" en
 FlyWire es el lado izquierdo del robot.
+
+Paso de integración: 0,1 ms (el del artículo) en la GPU, que va 8x por delante del
+tiempo real. En la CPU 0,1 ms va a 0,29x y todo el visor iría a cámara lenta, así que
+sin GPU se usa 0,5 ms (~1x, unas frecuencias un 3 % distintas).
 """
 from dataclasses import dataclass, field
 import math
@@ -22,6 +26,7 @@ import numpy as np
 from lif import Params, make_brain
 
 MAX_HZ = 150.0  # frecuencia de estímulo a saliencia 1 (la del artículo)
+DT_GPU, DT_CPU = 0.1, 0.5  # ms
 
 LC10 = ('LC10a', 'LC10c-1', 'LC10c-2', 'LC10d')
 INPUTS = {
@@ -57,9 +62,20 @@ class Command:
     inputs: dict = field(default_factory=dict)  # Hz por grupo de entrada
 
 
+def gpu_available(device='auto'):
+    """¿Correrá make_brain en la GPU con este device?"""
+    if device == 'cpu':
+        return False
+    import lif_gpu
+    return lif_gpu.available()
+
+
 class FlyPilot:
-    def __init__(self, connectome, params=Params(dt=0.1), device='auto', seed=0, smooth_ms=150.0):
+    def __init__(self, connectome, params=None, device='auto', seed=0, smooth_ms=150.0):
+        """params=None elige el paso según dónde corra el cerebro (DT_GPU o DT_CPU)."""
         self.c = connectome
+        if params is None:
+            params = Params(dt=DT_GPU if gpu_available(device) else DT_CPU)
         self.brain = make_brain(connectome, params, seed=seed, device=device)
 
         def group(types, side):
@@ -76,6 +92,9 @@ class FlyPilot:
         self.brain.reset()
         self.vx = self.wz = 0.0
         self.escape_left = 0.0  # ms que quedan de la maniobra de escape
+        self.pending_ms = 0.0   # tiempo pedido que aún no cabe en un paso dt entero
+        self.last_cmd = Command()
+        self.last_counts = np.zeros(self.c.n, np.int64)
 
     def _probe(self, inputs, ms=300.0):
         self.brain.reset()
@@ -110,7 +129,20 @@ class FlyPilot:
         return hz
 
     def step(self, senses: Senses, ms=40.0) -> Command:
-        """Corre el cerebro `ms` con lo que ve el robot y devuelve el comando de marcha."""
+        """Corre el cerebro `ms` con lo que ve el robot y devuelve el comando de marcha.
+
+        El cerebro avanza en pasos dt enteros; lo que sobra de `ms` se guarda para la
+        siguiente llamada, así el tiempo neuronal no se desfasa del mundo (con dt 0,5 ms y
+        fotogramas de 41,67 ms el redondeo perdía un 0,4 % por fotograma).
+        """
+        dt = self.brain.p.dt
+        self.pending_ms += ms
+        n_steps = int(self.pending_ms / dt + 1e-6)
+        if n_steps == 0:  # menos de un paso: nada que simular todavía
+            self.last_counts = np.zeros(self.c.n, np.int64)
+            return self.last_cmd
+        ms = n_steps * dt
+        self.pending_ms = max(0.0, self.pending_ms - ms)
         hz = self.encode(senses)
         self.brain.stimulate(*[(self.inputs[k], r) for k, r in hz.items()])
         counts = self.brain.run(ms)
@@ -131,4 +163,5 @@ class FlyPilot:
         a = 1.0 - math.exp(-ms / self.smooth_ms)  # filtro: los servos no deben dar tirones
         self.vx += a * (vx_target - self.vx)
         self.wz += a * (wz_target - self.wz)
-        return Command(self.vx, self.wz, escaping, rates, hz)
+        self.last_cmd = Command(self.vx, self.wz, escaping, rates, hz)
+        return self.last_cmd
