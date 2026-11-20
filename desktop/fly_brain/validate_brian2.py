@@ -92,6 +92,10 @@ def main():
     print(f"Neuronas activas (sin las estimuladas): original {(ref[others] > 0).sum()}, "
           f"nuestro {(ours[others] > 0).sum()}")
     print(f"Correlación neurona a neurona: r = {r:.3f} · pendiente nuestro/original = {slope:.3f}")
+    out = DATA / f"validation_{name}.npz"   # para figures.py (gráfica de dispersión)
+    np.savez(out, original=ref[active], ours=ours[active], r=r, slope=slope,
+             t_ref=t_ref, t_ours=t_ours, ref_trials=ref_trials, our_trials=our_trials)
+    print(f"Guardado {out}")
 
     a = c.annotations
     dn = others[(a.super_class.to_numpy()[others] == "descending")]
