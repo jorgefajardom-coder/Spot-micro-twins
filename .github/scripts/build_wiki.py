@@ -95,12 +95,12 @@ def title(md: Path) -> str:
 
 def sidebar(repo: str) -> str:
     lines = []
-    for folder, heading in (("cerebro", "Cerebro (español)"), ("brain", "Brain (English)")):
+    for folder, heading in (("brain", "Brain (English)"), ("cerebro", "Cerebro (español)")):
         lines.append(f"**[{heading}]({LANGS[folder]})**\n")
         for md in sorted((WIKI / folder).glob("[0-9]*.md")):
             lines.append(f"- [{title(md)}]({page_name(md)})")
         lines.append("")
-    lines.append(f"---\n[Repositorio](https://github.com/{repo})")
+    lines.append(f"---\n[Repository](https://github.com/{repo})")
     return "\n".join(lines) + "\n"
 
 
@@ -109,16 +109,16 @@ def home(repo: str) -> str:
     return f"""# Spot Micro Twins · Wiki
 
 <p align="center">
-  <img src="{raw}/spot_brain.gif" alt="El Spot explorando la cueva con el cerebro de la mosca" width="720">
+  <img src="{raw}/spot_brain.gif" alt="The Spot exploring the cave with the fly brain" width="720">
 </p>
-
-**Español** · El cerebro del Spot Micro: el conectoma completo de una mosca de la
-fruta (138.639 neuronas) pilotando el robot en la cueva.
-→ **[Entrar a la wiki en español](Cerebro)**
 
 **English** · The Spot Micro's brain: a fruit fly's full connectome (138,639
 neurons) driving the robot through the cave.
 → **[Open the wiki in English](Brain)**
+
+**Español** · El cerebro del Spot Micro: el conectoma completo de una mosca de la
+fruta (138.639 neuronas) pilotando el robot en la cueva.
+→ **[Entrar a la wiki en español](Cerebro)**
 
 """
 
