@@ -22,6 +22,15 @@ The fly brain **only pilots the simulated Spot Micro** in the cave viewer
 | IMU | Tilt computed from the terrain | Real **MPU6050** (balance and telemetry) |
 | Gait and kinematics | `gait.py` + `kinematics.py` | The same `gait.py` + `kinematics.py`, from the GUI |
 
+<p align="center">
+  <img src="../../assets/spotmicro-foto.jpg" alt="The physical Spot Micro" width="480">
+  <img src="../../assets/spotmicro-plano.jpg" alt="Top view: body, electronics and legs" width="380">
+</p>
+
+<p align="center"><em>The physical robot and its electronics: ESP32, servos and IMU, no mission sensors.</em></p>
+
+![3D twins viewer (spot_viewer.py): the robot's articulated CAD model](../../assets/visor-3d.png)
+
 ## Sensors left out, on purpose
 
 **No mission sensors (gas, ambient temperature, LiDAR) were integrated into the

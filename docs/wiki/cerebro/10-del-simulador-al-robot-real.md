@@ -22,6 +22,15 @@ El cerebro de la mosca **pilota solo el Spot Micro simulado** del visor de la cu
 | IMU | Inclinación calculada del terreno | **MPU6050** real (equilibrio y telemetría) |
 | Marcha y cinemática | `gait.py` + `kinematics.py` | Los mismos `gait.py` + `kinematics.py` desde la GUI |
 
+<p align="center">
+  <img src="../../assets/spotmicro-foto.jpg" alt="El Spot Micro físico" width="480">
+  <img src="../../assets/spotmicro-plano.jpg" alt="Vista superior: cuerpo, electrónica y patas" width="380">
+</p>
+
+<p align="center"><em>El robot físico y su electrónica: ESP32, servos e IMU, sin sensores de misión.</em></p>
+
+![Visor 3D de los gemelos (spot_viewer.py): el modelo CAD articulado del robot](../../assets/visor-3d.png)
+
 ## Sensores sin integrar, a propósito
 
 **No se le integraron sensores de misión (gas, temperatura ambiente, LiDAR) al robot

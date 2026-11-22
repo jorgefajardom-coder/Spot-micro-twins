@@ -109,6 +109,7 @@ Results are saved to `data/benchmark.json`.
 | Speed of each version | `python figures.py speed` | Nothing |
 | Original vs ours, neuron by neuron | `python figures.py scatter` | Having run `validate_brian2.py` |
 | Spikes during an escape (*raster*) | `python figures.py raster` | The FlyWire connectome |
+| One LIF neuron receiving spikes | `python figures.py neuron` | Nothing |
 
 ## All the tests
 

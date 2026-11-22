@@ -166,6 +166,10 @@ En la galería de mina la fuga está a 14 m de la entrada. Sin gráficos, el cer
 completo la encuentra en **unos 52 s**, en terreno plano y escarpado, sin chocar con
 las paredes.
 
+<p align="center">
+  <a href="../../assets/spot-micro-cueva.mp4"><img src="../../assets/spot-micro-cueva.gif" alt="La cueva reconstruida por el LiDAR y la fuga de gas localizada" width="640"></a>
+</p>
+
 ---
 
 ## Cerebro y médula: el reparto
