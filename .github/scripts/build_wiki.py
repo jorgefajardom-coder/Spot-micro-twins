@@ -27,6 +27,7 @@ WIKI = ROOT / "docs" / "wiki"
 LANGS = {"cerebro": "Cerebro", "brain": "Brain"}
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
 LINK = re.compile(r"(!?)\[([^\]]*)\]\(([^)\s]+)\)")
+ATTR = re.compile(r'\b(src|href)="([^"]+)"')
 
 
 def default_repo():
@@ -51,29 +52,39 @@ def pages():
 
 
 def rewrite(md: Path, text: str, repo: str, ref: str) -> str:
-    def fix(m):
-        bang, label, target = m.groups()
+    def target_url(target, image):
+        """Destino nuevo de un enlace relativo, o None si se deja igual."""
         if re.match(r"^[a-z]+:|^#", target):
-            return m.group(0)
+            return None
         path, _, anchor = target.partition("#")
         resolved = (md.parent / path).resolve()
         try:
             rel = PurePosixPath(resolved.relative_to(ROOT).as_posix())
         except ValueError:
-            return m.group(0)
+            return None
         anchor = f"#{anchor}" if anchor else ""
         if resolved.suffix == ".md" and resolved.parent.parent == WIKI and resolved.parent.name in LANGS:
-            return f"{bang}[{label}]({page_name(resolved)}{anchor})"
-        kind = "raw" if bang or rel.suffix.lower() in IMAGE_EXT else "blob"
+            return f"{page_name(resolved)}{anchor}"
+        kind = "raw" if image or rel.suffix.lower() in IMAGE_EXT else "blob"
         if resolved.is_dir():
             kind = "tree"
-        return f"{bang}[{label}](https://github.com/{repo}/{kind}/{ref}/{rel}{anchor})"
+        return f"https://github.com/{repo}/{kind}/{ref}/{rel}{anchor}"
+
+    def fix(m):
+        bang, label, target = m.groups()
+        url = target_url(target, bool(bang))
+        return m.group(0) if url is None else f"{bang}[{label}]({url})"
+
+    def fix_attr(m):
+        attr, target = m.groups()
+        url = target_url(target, attr == "src")
+        return m.group(0) if url is None else f'{attr}="{url}"'
 
     out, in_code = [], False
     for line in text.splitlines(keepends=True):
         if line.lstrip().startswith("```"):
             in_code = not in_code
-        out.append(line if in_code else LINK.sub(fix, line))
+        out.append(line if in_code else ATTR.sub(fix_attr, LINK.sub(fix, line)))
     return "".join(out)
 
 
@@ -94,7 +105,12 @@ def sidebar(repo: str) -> str:
 
 
 def home(repo: str) -> str:
+    raw = f"https://github.com/{repo}/raw/main/docs/assets"
     return f"""# Spot Micro Twins · Wiki
+
+<p align="center">
+  <img src="{raw}/spot_brain.gif" alt="El Spot explorando la cueva con el cerebro de la mosca" width="720">
+</p>
 
 **Español** · El cerebro del Spot Micro: el conectoma completo de una mosca de la
 fruta (138.639 neuronas) pilotando el robot en la cueva.
@@ -104,13 +120,6 @@ fruta (138.639 neuronas) pilotando el robot en la cueva.
 neurons) driving the robot through the cave.
 → **[Open the wiki in English](Brain)**
 
----
-
-> Estas páginas se generan desde [`docs/wiki/`](https://github.com/{repo}/tree/main/docs/wiki)
-> del repositorio. Para corregir algo, edita ahí; los cambios hechos aquí se pierden.
->
-> These pages are generated from `docs/wiki/` in the repository. Edit there;
-> changes made here are overwritten.
 """
 
 

@@ -39,6 +39,14 @@ each presynaptic spike adds  w = (sign × n_synapses) × w_syn  to g,
 after a delay t_dly
 ```
 
+![One LIF neuron receiving spikes](../assets/brain_neuron_en.png)
+
+*The equations at work, with the same `lif.py` and two neurons. Each spike from A
+reaches B 1.8 ms later and kicks `g` up (40 synapses × 0.275 mV = 11 mV); `g` decays
+with τ = 5 ms and pushes `v` up. A single spike isn't enough to cover the 7 mV to
+threshold: B fires when several arrive close together. After each spike `v` goes back
+to −52 mV, `g` to 0, and both stay frozen for 2.2 ms. Regenerate with `python figures.py neuron`.*
+
 ### The parameters
 
 All in [`lif.py` · `Params`](../../../desktop/fly_brain/lif.py), identical to the

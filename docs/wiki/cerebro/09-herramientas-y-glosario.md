@@ -109,6 +109,7 @@ Guarda los resultados en `data/benchmark.json`.
 | Velocidad de cada versión | `python figures.py speed` | Nada |
 | Original contra nuestro, neurona a neurona | `python figures.py scatter` | Haber corrido `validate_brian2.py` |
 | Espigas durante un escape (*raster*) | `python figures.py raster` | El conectoma de FlyWire |
+| Una neurona LIF recibiendo espigas | `python figures.py neuron` | Nada |
 
 ## Todas las pruebas
 

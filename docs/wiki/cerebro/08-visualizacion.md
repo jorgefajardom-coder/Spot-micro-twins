@@ -11,6 +11,8 @@ muestra el cerebro de la mosca en 3D mientras pilota, con las neuronas que dispa
 iluminadas y las sinapsis por las que pasa la señal. Dibujar 138.639 neuronas a
 ~30 fps junto al robot, la cueva y el mapa también requirió sus propios trucos.
 
+![El visor: robot en la cueva, cerebro en 3D y mapa del LiDAR](../../assets/spot_brain.gif)
+
 ---
 
 ## La forma de cada neurona

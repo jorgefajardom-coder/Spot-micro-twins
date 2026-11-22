@@ -11,6 +11,8 @@ shows the fly brain in 3D while it pilots, with firing neurons lit up and the
 synapses the signal travels along. Drawing 138,639 neurons at ~30 fps alongside the
 robot, the cave and the map needed its own tricks too.
 
+![The viewer: robot in the cave, 3D brain and LiDAR map](../../assets/spot_brain.gif)
+
 ---
 
 ## The shape of each neuron

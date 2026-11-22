@@ -39,6 +39,14 @@ cada espiga de una presináptica suma  w = (signo × n_sinapsis) × w_syn  a g,
 tras un retardo t_dly
 ```
 
+![Una neurona LIF recibiendo espigas](../assets/brain_neuron_es.png)
+
+*Las ecuaciones en acción, con el mismo `lif.py` y dos neuronas. Cada espiga de A
+llega a B 1,8 ms después y sube `g` de golpe (40 sinapsis × 0,275 mV = 11 mV); `g`
+cae con τ = 5 ms y empuja `v` hacia arriba. Una espiga sola no basta para cruzar los
+7 mV hasta el umbral: B dispara cuando varias llegan juntas. Tras cada espiga, `v`
+vuelve a −52 mV, `g` a 0, y las dos quedan congeladas 2,2 ms. Se regenera con `python figures.py neuron`.*
+
 ### Los parámetros
 
 Todos en [`lif.py` · `Params`](../../../desktop/fly_brain/lif.py), idénticos al

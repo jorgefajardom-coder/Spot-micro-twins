@@ -164,6 +164,10 @@ wz += a * (wz_target - wz)
 In the mine gallery the leak is 14 m from the entrance. Without graphics, the full
 brain finds it in **about 52 s**, on flat and rough terrain, without hitting the walls.
 
+<p align="center">
+  <a href="../../assets/spot-micro-cueva.mp4"><img src="../../assets/spot-micro-cueva.gif" alt="The cave rebuilt by the LiDAR and the gas leak located" width="640"></a>
+</p>
+
 ---
 
 ## Brain and spinal cord: the split
